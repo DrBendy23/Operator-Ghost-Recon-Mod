@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>GhostReconView</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GameDir Condition="'$(GameDir)' == ''">..\OPERATOR</GameDir>
+    <BepInEx>$(GameDir)\BepInEx</BepInEx>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(BepInEx)\core\BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(BepInEx)\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(BepInEx)\core\Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(BepInEx)\core\Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(BepInEx)\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\Il2Cppmscorlib.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\Il2CppSystem.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\UnityEngine.InputLegacyModule.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="$(BepInEx)\interop\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="$(BepInEx)\plugins\OperatorModControls.dll" Private="false" />
+  </ItemGroup>
+</Project>
