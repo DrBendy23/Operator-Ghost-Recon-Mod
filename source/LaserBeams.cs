@@ -22,6 +22,11 @@ internal static class LaserBeams
     const float NightVisionDotGlow = 0.12f;
     const int DustSize = 512;
     const float MaxSpotAngle = 12f;
+    const float FadeDistance = 15f;
+    const float NightVisionFadeDistance = 300f;
+    const float NightVisionBeamGlow = 0.1f;
+    const float DayBeamGlow = 0.3f;
+    const float DaylightDotDistance = 50f;
     static readonly string[] BaseColors = { "_Color", "_BaseColor", "_UnlitColor", "_TintColor", "_MainColor" };
 
     class Source { public Light light; public IRLaserLight part; public Transform emitter; public bool ir; public float range; }
@@ -185,6 +190,11 @@ internal static class LaserBeams
         }
 
         Vector3 dir = (b - a).normalized;
+        float len = Vector3.Distance(a, b), fade = nv ? NightVisionFadeDistance : FadeDistance;
+        Vector3 e = len > fade ? a + dir * fade : b;
+        var st = new Vector4(Mathf.Min(len, fade) / fade, 1f, 0f, 0f);
+        foreach (var n in new[] { "_BaseColorMap_ST", "_EmissiveColorMap_ST" })
+            try { if (w.mat.HasProperty(n)) w.mat.SetVector(n, st); } catch { }
         float dt = Mathf.Max(0.001f, Time.unscaledDeltaTime);
         float target = w.lastDir == Vector3.zero ? 0f : Mathf.Clamp01((Vector3.Angle(w.lastDir, dir) / dt - 15f) / 60f);
         w.lastDir = dir;
@@ -193,7 +203,7 @@ internal static class LaserBeams
         float pale = Paleness.Value / 100f, strength = Strength.Value / 100f;
         var pc = new Color(Mathf.Lerp(col.r, 1f, pale), Mathf.Lerp(col.g, 1f, pale), Mathf.Lerp(col.b, 1f, pale), Mathf.Clamp01(strength));
         w.lr.startColor = w.lr.endColor = pc;
-        float self = Mathf.Max(0f, strength - 1f) * (nv ? 0.025f : 0.08f);
+        float self = (nv ? NightVisionBeamGlow : DayBeamGlow) * strength;
         w.mat.SetColor("_EmissiveColor", new Color(pc.r * self, pc.g * self, pc.b * self, 1f));
         var tint = new Color(pc.r, pc.g, pc.b, Mathf.Lerp(1f, 1f - Shimmer.Value / 100f, w.swing) * pc.a * (nv ? 0.5f : 1f));
         foreach (var n in BaseColors) if (w.mat.HasProperty(n)) w.mat.SetColor(n, tint);
@@ -204,9 +214,9 @@ internal static class LaserBeams
         Vector3 eye = rc == null ? a : rc.transform.position;
         w.lr.widthMultiplier = 1f;
         w.lr.startWidth = rc == null ? FallbackWidth : Vector3.Distance(eye, a) * px * thick;
-        w.lr.endWidth = rc == null ? FallbackWidth : Vector3.Distance(eye, b) * px * thick;
+        w.lr.endWidth = rc == null ? FallbackWidth : Vector3.Distance(eye, e) * px * thick;
 
-        w.dot.enabled = hit && rc != null;
+        w.dot.enabled = hit && rc != null && (nv || len <= DaylightDotDistance);
         if (w.dot.enabled)
         {
             float size = Vector3.Distance(eye, b) * px * DotPixels * DotSize.Value / 100f;
@@ -222,7 +232,7 @@ internal static class LaserBeams
 
         if (w.go.layer != layer) w.go.layer = layer;
         w.lr.SetPosition(0, a);
-        w.lr.SetPosition(1, b);
+        w.lr.SetPosition(1, e);
         w.lr.enabled = true;
         w.used = true;
     }
@@ -239,22 +249,24 @@ internal static class LaserBeams
             ("_EmissiveExposureWeight", 0f), ("_DoubleSidedEnable", 1f), ("_CullMode", 0f), ("_CullModeForward", 0f), ("_DoubleSidedNormalMode", 1f),
             ("_MaterialID", 4f), ("_EnergyConservingSpecularColor", 0f), ("_SpecularAAScreenSpaceVariance", 0f),
             ("_ReceivesSSR", 0f), ("_ReceivesSSRTransparent", 0f), ("_Smoothness", 0f), ("_Metallic", 0f), ("_SpecularOcclusionMode", 0f), ("_CoatMask", 0f),
-            ("_SurfaceType", 1f), ("_BlendMode", 0f), ("_SrcBlend", 1f), ("_DstBlend", 10f), ("_AlphaSrcBlend", 1f), ("_AlphaDstBlend", 10f),
+            ("_SurfaceType", 1f), ("_BlendMode", 1f), ("_SrcBlend", 1f), ("_DstBlend", 1f), ("_AlphaSrcBlend", 1f), ("_AlphaDstBlend", 1f),
             ("_ZWrite", 0f), ("_TransparentZWrite", 0f), ("_EnableBlendModePreserveSpecularLighting", 0f), ("_UseEmissiveIntensity", 0f) })
             if (w.mat.HasProperty(n)) w.mat.SetFloat(n, v);
         if (w.mat.HasProperty("_SpecularColor")) w.mat.SetColor("_SpecularColor", Color.black);
-        foreach (var kw in new[] { "_SURFACE_TYPE_TRANSPARENT", "_BLENDMODE_ALPHA", "_DOUBLESIDED_ON", "_MATERIAL_FEATURE_SPECULAR_COLOR", "_DISABLE_SSR", "_DISABLE_SSR_TRANSPARENT" })
+        foreach (var kw in new[] { "_SURFACE_TYPE_TRANSPARENT", "_BLENDMODE_ADD", "_EMISSIVE_COLOR_MAP", "_DOUBLESIDED_ON", "_MATERIAL_FEATURE_SPECULAR_COLOR", "_DISABLE_SSR", "_DISABLE_SSR_TRANSPARENT" })
             w.mat.EnableKeyword(kw);
-        foreach (var kw in new[] { "_BLENDMODE_ADD", "_BLENDMODE_PRE_MULTIPLY", "_BLENDMODE_PRESERVE_SPECULAR_LIGHTING", "_EMISSIVE_MAPPING_BASE", "_EMISSIVE_COLOR_MAP" })
+        foreach (var kw in new[] { "_BLENDMODE_ALPHA", "_BLENDMODE_PRE_MULTIPLY", "_BLENDMODE_PRESERVE_SPECULAR_LIGHTING", "_EMISSIVE_MAPPING_BASE" })
             w.mat.DisableKeyword(kw);
         if (DustTexture() != null && w.mat.HasProperty("_BaseColorMap")) w.mat.SetTexture("_BaseColorMap", _dust);
-        if (w.mat.HasProperty("_EmissiveColorMap")) w.mat.SetTexture("_EmissiveColorMap", null);
+        if (w.mat.HasProperty("_EmissiveColorMap")) w.mat.SetTexture("_EmissiveColorMap", _dust);
 
         w.lr = Line(w.go, w.mat, 0);
         w.lr.textureMode = LineTextureMode.Stretch;
 
         w.dotMat = new Material(w.mat) { hideFlags = HideFlags.HideAndDontSave };
         if (w.dotMat.HasProperty("_BaseColorMap")) w.dotMat.SetTexture("_BaseColorMap", null);
+        if (w.dotMat.HasProperty("_EmissiveColorMap")) w.dotMat.SetTexture("_EmissiveColorMap", null);
+        w.dotMat.DisableKeyword("_EMISSIVE_COLOR_MAP");
         foreach (var n in BaseColors) if (w.dotMat.HasProperty(n)) w.dotMat.SetColor(n, Color.black);
         var dotGo = new GameObject("GhostReconView_Dot") { hideFlags = HideFlags.HideAndDontSave };
         UnityEngine.Object.DontDestroyOnLoad(dotGo);
@@ -319,9 +331,10 @@ internal static class LaserBeams
         var px = new Color32[DustSize];
         for (int x = 0; x < DustSize; x++)
         {
-            float u = Mathf.Sqrt(x / (float)(DustSize - 1));
-            float v = nv ? 0.55f * Mathf.Lerp(0.6f, 0.45f, u) : Mathf.Max(0f, Mathf.LerpUnclamped(0.8f, _dustBase[x], g)) * Mathf.Lerp(1f, 0.3f, u);
-            px[x] = new Color32(255, 255, 255, (byte)(255f * Mathf.Clamp01(v / 0.8f)));
+            float t = x / (float)(DustSize - 1);
+            float v = (nv ? 0.33f : Mathf.Lerp(Mathf.Max(0f, Mathf.LerpUnclamped(0.8f, _dustBase[x], g)), 0.8f, t)) * (1f - t) * (1f - t * 0.5f);
+            byte b = (byte)(255f * Mathf.Clamp01(v / 0.8f));
+            px[x] = new Color32(b, b, b, b);
         }
         _dust.SetPixels32(px);
         _dust.Apply(false);
