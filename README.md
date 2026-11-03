@@ -8,7 +8,7 @@ Ghost Recon-style third person for **OPERATOR**. An add-on for [BASS Third Perso
 
 ## What it does
 - Aiming glides the camera from your shoulder into your scope
-- A thin, realistic laser with a clean dot, also in night vision
+- A thin, see-through laser that fades out smoothly like a real one, with a clean dot, also in night vision
 - Adjust the laser in Settings → Mods
 
 ## Install
