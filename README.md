@@ -11,7 +11,7 @@ Add-on for [BASS Third Person Mod](https://www.nexusmods.com/operator/mods/242).
 
 - Play first person, switch to third person any time with one key. Aiming glides from your shoulder into your scope
 - Auto lean: aim past the edge of cover and your operator leans by himself (the game's own lean, so everyone sees it)
-- One reload key (C): racks an empty chamber, clears jams, reloads and chambers an empty gun
+- One reload key (C): racks an empty chamber, clears jams, reloads and chambers an empty gun. Bolt rifles cycle the bolt by themselves; shotguns load the game's way
 - A thin, see-through laser that fades out like a real one, also in night vision
 - Crosshair you can tune. Everything in Settings → Mods
 

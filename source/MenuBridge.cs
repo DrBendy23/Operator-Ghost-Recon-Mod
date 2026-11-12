@@ -90,7 +90,7 @@ internal static class MenuBridge
 
         if (_hooked) return;
         _hooked = true;
-        // one color pick drives the third-person mod's red/green/blue entries
+
         var cr = F<ConfigEntry<float>>("Red"); var cg = F<ConfigEntry<float>>("Green"); var cb = F<ConfigEntry<float>>("Blue");
         void ApplyColor()
         {

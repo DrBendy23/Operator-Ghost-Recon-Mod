@@ -7,12 +7,6 @@ using UnityEngine;
 
 namespace GhostReconView;
 
-// COD-style handling for your own weapon, whatever key Reload is bound to:
-//  - after any reload, if no round is chambered (gun was empty) the mod racks one in
-//  - if the gun jammed, the next reload also racks to clear the dud
-//  - a reload with a round already chambered stays a normal reload
-// It watches the weapon's own reload state instead of one input method, so it works
-// whichever way the game starts the reload.
 internal static class SmartReload
 {
     internal static ConfigEntry<float> Speed;
@@ -22,7 +16,7 @@ internal static class SmartReload
     static PropertyInfo _pLocal;
     static WeaponV3 _w;
     static float _nextFind, _rackAt = -1f, _verifyAt = -1f, _lastDone = -10f;
-    static bool _wasReloading, _jammed, _ours, _triedMods, _needRack, _sawReload;
+    static bool _wasReloading, _jammed, _ours, _triedMods, _triedAnim, _needRack, _sawReload;
     static float _lastPress = -10f, _checkAt = -1f, _rackFailedAt = -100f;
     static readonly Dictionary<string, int> _seen = new();
 
@@ -30,7 +24,7 @@ internal static class SmartReload
     {
         Speed = cfg.Bind("Handling", "ReloadSpeed", 100f, new ConfigDescription("Reload speed, percent.", new AcceptableValueRange<float>(100f, 250f)));
         Patch(h, typeof(WeaponV3), "Reload", null, nameof(ReloadPrefix));
-        // The game's own Chamber key (also on C) racked a live round out on its own: C now goes through the mod only.
+
         Patch(h, typeof(WeaponV3), "ManualChamber", null, nameof(ChamberPrefix));
         Patch(h, typeof(WeaponMods), "ManualChamber", null, nameof(ChamberPrefix));
         Watch(h, typeof(WeaponV3), "CMD_Reload", "RPC_Reload", "CMD_Manual_Chamber");
@@ -38,6 +32,7 @@ internal static class SmartReload
         Watch(h, typeof(FPSAnimationHelper), "PlayReloadAnimation", "ChamberRound", "FinishingChambering");
         Patch(h, typeof(FPSAnimationHelper), "EndReload", nameof(EndReloadPostfix));
         Patch(h, typeof(WeaponV3), "CMD_malfunctionMisfire", nameof(MisfirePostfix));
+        Patch(h, typeof(WeaponV3), "CMD_Fire", nameof(FirePostfix));
         Patch(h, typeof(WeaponV3), "RPC_malfunctionMisfire", nameof(MisfirePostfix));
         Plugin.Out.LogInfo("[Reload] smart reload ready (" + "on" + ")");
     }
@@ -55,7 +50,6 @@ internal static class SmartReload
         catch (Exception e) { Plugin.Out.LogWarning("[Reload] patch " + m + ": " + e.Message); }
     }
 
-    // Logs the first few calls of each method, so the log shows which ones the game really uses.
     static void Watch(Harmony h, Type t, params string[] names)
     {
         foreach (var n in names)
@@ -95,6 +89,28 @@ internal static class SmartReload
         catch { return false; }
     }
 
+    static bool Manual(WeaponV3 w)
+    {
+        try { var gf = w.gunFunction; return gf != null && gf.isTubeFed; } catch { return false; }
+    }
+
+    static bool Bolt(WeaponV3 w)
+    {
+        try { var gs = w.gunStats; return gs != null && !gs.fullAuto && !gs.semiAutomatic && !Manual(w); } catch { return false; }
+    }
+    static float _nextAutoBolt, _boltAt = -1f;
+
+    static bool Live(WeaponV3 w)
+    {
+        try
+        {
+            if (!w.roundInChamber) return false;
+            var r = w.gunFunction?.currentRoundInChamber;
+            return r == null || !r.ignited;
+        }
+        catch { return w.roundInChamber; }
+    }
+
     static bool IsLocal(WeaponV3 w)
     {
         try
@@ -122,10 +138,11 @@ internal static class SmartReload
         return _w;
     }
 
-    // A key press that would make the game rack on its own: blocked, the mod decides (see ReloadPrefix).
-    public static bool ChamberPrefix()
+    public static bool ChamberPrefix(object __instance)
     {
         if (_ours) return true;
+        var w = __instance as WeaponV3 ?? _w;
+        if (w != null && Manual(w)) return true;
         bool fromKey = Input.anyKeyDown || Time.unscaledTime - _lastPress < 0.4f;
         if (!fromKey) return true;
         Plugin.Out.LogInfo("[Reload] game's chamber key blocked: C decides");
@@ -139,54 +156,57 @@ internal static class SmartReload
         return w.gameObject.name.Replace("(Clone)", "") + ", " + m + ", chambered " + w.roundInChamber + (locked ? ", slide locked" : "") + (_jammed ? ", JAMMED" : "");
     }
 
-    // Your reload key: decide what the gun actually needs.
     public static bool ReloadPrefix(WeaponV3 __instance)
     {
         try
         {
             if (_ours || __instance == null) return true;
             _w = __instance;
+            if (Manual(__instance)) { _needRack = false; _checkAt = -1f; return true; }
             var gf = __instance.gunFunction;
             var mag = gf?.currentMagazine;
             bool magHasAmmo = gf != null && gf.magazineInserted && mag != null && mag.ammoAmount > 0;
-            // Just racked, or racking right now: swallow the same key press so it does not also reload.
+
             if (Time.unscaledTime < _blockUntil || __instance.isChambering) return false;
             _lastPress = Time.unscaledTime;
             bool tube = gf != null && gf.isTubeFed;
             bool magIn = gf != null && gf.magazineInserted && mag != null;
             bool magFull = !tube && magIn && mag.ammoAmount >= mag.ammoAmountMax;
             Plugin.Out.LogInfo("[Reload] C pressed: " + Describe(__instance, gf, mag));
-            // 1. Jammed: clear the jam only.
+
             if (_jammed)
             {
                 Rack(__instance, "jammed: clearing it, no reload");
                 _blockUntil = Time.unscaledTime + 2f;
                 return false;
             }
-            // 2. Nothing chambered but rounds to feed (bolt-action after a shot, pump shotgun, fresh gun): chamber only.
-            //    A shotgun's tube count isn't readable, so it tries a pump first; if that didn't chamber anything, the tube is empty and C reloads.
+
             bool rounds = tube ? Time.unscaledTime - _rackFailedAt > 6f : magIn && mag.ammoAmount > 0;
-            if (!__instance.roundInChamber && rounds)
+            if (!Live(__instance) && rounds)
             {
                 Rack(__instance, "chamber empty, rounds to feed: chamber only");
                 _blockUntil = Time.unscaledTime + 1.2f;
                 return false;
             }
-            // 3. Full mag and chambered: nothing to do.
+
             if (magFull)
             {
                 Plugin.Out.LogInfo("[Reload] full mag, round chambered: nothing to do");
                 return false;
             }
-            // 4. Less than full: reload. Chamber after only if the gun was empty.
-            //    Shotgun (tube): load shells; pump after only if the chamber is empty.
-            _needRack = !__instance.roundInChamber;
+
+            _needRack = !Live(__instance);
             _sawReload = false;
-            _checkAt = Time.unscaledTime + 0.6f; // if the game doesn't start a reload (e.g. tube already full), still chamber if needed
+            _checkAt = Time.unscaledTime + 0.6f;
             Plugin.Out.LogInfo("[Reload] reload" + (_needRack ? ", then chamber" : ", no chamber"));
         }
         catch (Exception e) { Plugin.Out.LogDebug(e.Message); }
         return true;
+    }
+
+    public static void FirePostfix(WeaponV3 __instance)
+    {
+        try { if (__instance != null && Bolt(__instance) && (__instance == _w || IsLocal(__instance))) { _w = __instance; _boltAt = Time.unscaledTime + 0.5f; _nextAutoBolt = 0f; } } catch { }
     }
 
     public static void MisfirePostfix(WeaponV3 __instance)
@@ -214,8 +234,16 @@ internal static class SmartReload
         if (w == null) return;
         try
         {
+            if (Manual(w)) { _rackAt = -1f; _verifyAt = -1f; _needRack = false; return; }
             var gf = w.gunFunction;
             bool reloading = gf != null && gf.isReloading;
+            if (Bolt(w) && !reloading && !w.isChambering && !Live(w) && _rackAt < 0f && _verifyAt < 0f && Time.unscaledTime > _nextAutoBolt
+                && (_boltAt < 0f || Time.unscaledTime >= _boltAt))
+            {
+                var m = gf?.currentMagazine;
+                if (gf != null && gf.magazineInserted && m != null && m.ammoAmount > 0 && Time.unscaledTime - _lastPress > 0.3f)
+                { _nextAutoBolt = Time.unscaledTime + 1.5f; _boltAt = -1f; Rack(w, "bolt gun: cycling the bolt"); }
+            }
             if (reloading) _sawReload = true;
             if (_checkAt > 0f && Time.unscaledTime >= _checkAt)
             {
@@ -234,22 +262,31 @@ internal static class SmartReload
                 bool tube = gf != null && gf.isTubeFed;
                 bool hasAmmo = tube || (gf != null && gf.magazineInserted && mag != null && mag.ammoAmount > 0);
                 if (!hasAmmo) { _needRack = false; Plugin.Out.LogInfo("[Reload] no loaded mag (out of magazines?), nothing to chamber"); return; }
-                if (!_needRack && !_jammed) return; // partial-mag reload: no chambering
+                if (!_needRack && !_jammed) return;
                 _needRack = false;
-                if (w.roundInChamber && !_jammed) { Plugin.Out.LogInfo("[Reload] round already chambered: nothing to do"); return; }
+                if (Live(w) && !_jammed) { Plugin.Out.LogInfo("[Reload] round already chambered: nothing to do"); return; }
                 Rack(w, _jammed ? "clearing jam" : "empty reload");
             }
 
             if (_verifyAt > 0f && Time.unscaledTime >= _verifyAt && !w.isChambering)
             {
                 _verifyAt = -1f;
-                if (w.roundInChamber) { Plugin.Out.LogInfo("[Reload] chambered OK"); _jammed = false; }
+                if (Live(w)) { Plugin.Out.LogInfo("[Reload] chambered OK"); _jammed = false; }
                 else if (!_triedMods)
                 {
                     _triedMods = true;
                     Plugin.Out.LogInfo("[Reload] still empty, trying the weapon's direct rack");
                     _ours = true;
                     try { w.ManualChamber(); } catch (Exception e) { Plugin.Out.LogWarning("[Reload] " + e.Message); }
+                    finally { _ours = false; }
+                    _verifyAt = Time.unscaledTime + 1.5f;
+                }
+                else if (!_triedAnim)
+                {
+                    _triedAnim = true;
+                    Plugin.Out.LogInfo("[Reload] still empty, trying the animation chamber");
+                    _ours = true;
+                    try { w.fpsAnimationHelper?.ChamberRound(); } catch (Exception e) { Plugin.Out.LogWarning("[Reload] " + e.Message); }
                     finally { _ours = false; }
                     _verifyAt = Time.unscaledTime + 1.5f;
                 }
@@ -288,7 +325,7 @@ internal static class SmartReload
 
     static void Rack(WeaponV3 w, string why)
     {
-        _ours = true; _triedMods = false;
+        _ours = true; _triedMods = false; _triedAnim = false;
         try
         {
             if (w.mods != null) w.mods.ManualChamber(); else w.ManualChamber();

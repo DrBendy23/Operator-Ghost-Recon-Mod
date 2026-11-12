@@ -10,7 +10,6 @@ using UnityEngine.Events;
 
 namespace GhostReconView;
 
-// Drone Operator: recon + attack FPV drones for OPERATOR. Standalone; works with or without Ghost Recon View.
 [BepInPlugin(Guid, "Drone Operator", "1.3")]
 [BepInDependency("local.operator.modcontrols", BepInDependency.DependencyFlags.SoftDependency)]
 public class DronePlugin : BasePlugin
@@ -31,7 +30,6 @@ public class DronePlugin : BasePlugin
         Log.LogInfo("Drone Operator loaded.");
     }
 
-    // Only runs if the OPERATOR mod settings menu (OperatorModControls) is installed.
     [MethodImpl(MethodImplOptions.NoInlining)]
     static void Menu()
     {

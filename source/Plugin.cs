@@ -12,7 +12,7 @@ using UnityEngine.Events;
 
 namespace GhostReconView;
 
-[BepInPlugin(Guid, "Ghost Recon View", "2.0.1")]
+[BepInPlugin(Guid, "Ghost Recon View", "2.0.2")]
 [BepInDependency("community.operator.thirdperson", BepInDependency.DependencyFlags.HardDependency)]
 [BepInDependency("local.operator.modcontrols", BepInDependency.DependencyFlags.SoftDependency)]
 public class Plugin : BasePlugin

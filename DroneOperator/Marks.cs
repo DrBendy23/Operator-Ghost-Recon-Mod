@@ -4,7 +4,6 @@ using UnityEngine;
 
 namespace GhostReconView;
 
-// Recon marks: enemies you held the recon drone's crosshair on get a small white triangle over their head for 90 s.
 internal static class Marks
 {
     internal static readonly Dictionary<IntPtr, float> MarkedUntil = new();
@@ -20,7 +19,6 @@ internal static class Marks
 
     static int LocalTeam() { try { var t = PlayerMaster.MyPlayerMaster?.MyTeamIdentifier; return t != null ? t.TeamID : int.MinValue; } catch { return int.MinValue; } }
 
-    // AI enemies only (never real players), not on your team.
     internal static IEnumerable<Health> LiveEnemies()
     {
         Scan();

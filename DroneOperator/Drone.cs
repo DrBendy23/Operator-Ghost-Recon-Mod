@@ -6,11 +6,6 @@ using UnityEngine;
 
 namespace GhostReconView;
 
-// Two drones, one of each per mission:
-//  - Recon (5-inch): reusable, marks enemies you hold the crosshair on for 1 s
-//  - Attack (7-inch FPV): explodes on impact or on left click, damages AI in a radius
-// W/S forward/back, A/D left/right, scroll wheel up/down, mouse to look, detonate key (default mouse 4), V view, Backspace recall.
-// While you fly: your operator holds the game's own tablet (everyone sees that), gets no input, and the camera is the drone's.
 internal static class Drone
 {
     internal static ConfigEntry<KeyCode> ReconKey, AttackKey, DetonateKey, FlipKey, PickupKey;
@@ -49,9 +44,9 @@ internal static class Drone
         BatteryMin = cfg.Bind("Drone", "BatteryMinutesV2", 2f, new ConfigDescription("Flight time, minutes.", new AcceptableValueRange<float>(1f, 10f)));
     }
 
-    const float RangeMeters = 1200f;   // signal range
+    const float RangeMeters = 1200f;
 
-    const float BreakSpeed = 4.2f;   // ≈ 15 km/h, same for both drones: light taps bounce, a real hit breaks it
+    const float BreakSpeed = 4.2f;
 
     internal static bool Flying => _flying;
 
@@ -73,7 +68,7 @@ internal static class Drone
             var imp = AccessTools.Method(typeof(BulletInstance), "SpawnImpactNewSystem");
             if (imp != null) h.Patch(imp, prefix: new HarmonyLib.HarmonyMethod(typeof(Drone), nameof(BulletHitPrefix)));
             else Game.Log.LogWarning("[Drone] bullet impact hook not found");
-            // the scroll wheel is the drone's while you fly (the game uses it to raise/lower your gun)
+
             foreach (var an in new[] { "GetAxis", "GetAxisRaw" })
             {
                 var ax = AccessTools.Method(typeof(Input), an, new[] { typeof(string) });
@@ -81,7 +76,7 @@ internal static class Drone
             }
             var sd = AccessTools.PropertyGetter(typeof(Input), "mouseScrollDelta");
             if (sd != null) h.Patch(sd, postfix: new HarmonyLib.HarmonyMethod(typeof(Drone), nameof(ScrollDeltaPostfix)));
-            // the game's camera: no mouse look on your operator while you fly
+
             foreach (var mn in new[] { "HandleCameraRotation", "RotateCamera" })
             {
                 var cm = AccessTools.Method(typeof(CMF.CameraController), mn);
@@ -93,7 +88,6 @@ internal static class Drone
 
     public static bool FlyingSkipPrefix() => !_flying;
 
-    // A bullet (anyone's) hit the drone: recon breaks apart, attack explodes.
     static SphereCollider _hitBox;
     public static void BulletHitPrefix(RaycastHit hitInfo)
     {
@@ -101,7 +95,7 @@ internal static class Drone
         {
             if (!_flying || _root == null || hitInfo.collider == null || !hitInfo.collider.transform.IsChildOf(_root.transform)) return;
             float speed = _vel.magnitude;
-            if (UnityEngine.Random.value > 0.6f / (1f + speed / 4f)) { Bump(0.5f); Game.Log.LogInfo("[Drone] round grazed it"); return; }   // fast: most hits glance off
+            if (UnityEngine.Random.value > 0.6f / (1f + speed / 4f)) { Bump(0.5f); Game.Log.LogInfo("[Drone] round grazed it"); return; }
             Game.Log.LogInfo("[Drone] shot down");
             if (_kind == Kind.Attack) Explode(); else { _vel *= 0.5f; Lose("crashed"); }
         }
@@ -123,7 +117,6 @@ internal static class Drone
         __result = Vector2.zero;
     }
 
-    // Runs right after the game updates one key's state for this frame: we overwrite that state.
     public static void BindPostfix(InputLayer.InputKeyBindInstance __instance)
     {
         try
@@ -135,14 +128,12 @@ internal static class Drone
     }
     public static void MousePostfix(ref Vector2 __result) { if (_flying) __result = Vector2.zero; }
 
-    // Game actions that share a key with the drone (e.g. drop weapon) are never triggered by a drone key press.
     static readonly HashSet<InputKey> _ourActions = new();
     static int _bindsLogged = -1;
 
     static bool _bindsValid;
     internal static bool BindsValid => _bindsValid;
 
-    // Reads the game's key table (empty in the menus, so it retries) to find game actions sharing a drone key.
     static void ScanBinds()
     {
         try
@@ -173,14 +164,13 @@ internal static class Drone
 
     public static bool GetKeyPrefix(InputKey key, bool ActivatedThisFrame, ref bool __result)
     {
-        if (_flying && !NvgKey(key)) { __result = false; return false; }      // while you fly, your operator gets no input at all (except NVG keys: the drone feed uses them)
-        if (_ourActions.Contains(key)) { __result = false; return false; }      // a drone key never fires a game action
+        if (_flying && !NvgKey(key)) { __result = false; return false; }
+        if (_ourActions.Contains(key)) { __result = false; return false; }
         return true;
     }
 
     static Tablet _tablet;
 
-    // Exactly what the game does on M: held = Tablet.StartInteraction(), released = Tablet.ResumeInteraction().
     static void TabletPose(bool open)
     {
         try
@@ -210,7 +200,7 @@ internal static class Drone
     internal static void Tick()
     {
         BoomCheck();
-        // New spawn (new operation, or the same one restarted): both drones are ready again.
+
         try { var p0 = Pn(); var ptr = p0 != null ? p0.Pointer : IntPtr.Zero; if (ptr != _spawnPtr) { if (ptr != IntPtr.Zero) { _reconUsedUp = false; _attackUsedUp = false; ClearDebris(); } _spawnPtr = ptr; } } catch { }
         if (!_flying)
         {
@@ -235,8 +225,6 @@ internal static class Drone
         try { Fly(); } catch (Exception e) { Game.Log.LogWarning("[Drone] " + e.Message); End("error"); }
     }
 
-    // ---------- deploy / end ----------
-
     static void Deploy(Kind k)
     {
         try { DeployInner(k); } catch (Exception e) { Game.Log.LogWarning("[Drone] deploy failed: " + e.Message); End("deploy failed"); }
@@ -246,7 +234,7 @@ internal static class Drone
     {
         var pn = Pn(); if (pn == null) return;
         bool lobby = _scene.IndexOf("Operation Room", StringComparison.OrdinalIgnoreCase) >= 0 || _scene.IndexOf("Lobby", StringComparison.OrdinalIgnoreCase) >= 0 || _scene.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
-        if (lobby) { _reconUsedUp = false; _attackUsedUp = false; }   // unlimited drones in the lobby
+        if (lobby) { _reconUsedUp = false; _attackUsedUp = false; }
         if (k == Kind.Recon && _reconUsedUp) { Notice(HasParked(k) ? "Recon drone is on the ground. Go pick it up" : "Recon drone lost"); return; }
         if (k == Kind.Attack && _attackUsedUp) { Notice(HasParked(k) ? "Attack drone is on the ground. Go pick it up" : "Attack drone used"); return; }
         var cc = Game.CamOf(pn);
@@ -283,13 +271,10 @@ internal static class Drone
         Game.Log.LogInfo("[Drone] flight ended: " + why);
     }
 
-    // No global input switch while flying: the game's own tablet code sits behind it and would never see the held tablet key.
-    // Keys are forced in the key table (BindPostfix); mouse look is zeroed by MousePostfix + the camera patches.
     static void SetPlayerInput(bool on) { }
 
     static float _fov0 = -1f, _near0 = -1f; static Vector3 _camPos; static Quaternion _camRot; static float _camFov; static bool _camReady;
 
-    // We never create a camera (that broke the game's renderer). We steer the game's own camera instead.
     static Camera GameCam() => Game.ViewCamera;
 
     static void SetupCamera()
@@ -299,7 +284,6 @@ internal static class Drone
         try { if (_cam != null) _fov0 = _cam.fieldOfView; } catch { }
     }
 
-    // Called right before the frame renders, after every game script has moved the camera.
     internal static void BeforeRender()
     {
         if (!_flying || !_camReady) return;
@@ -312,10 +296,8 @@ internal static class Drone
         catch { }
     }
 
-    // ---------- flight ----------
-
     static float _flipT = 1f, _tapW, _tapS, _tapA, _tapD; static int _flipAxis, _tapsW, _tapsS, _tapsA, _tapsD;
-    // Triple-tap a key within 0.6 s to do the trick (taps are counted per key; a pause resets the count).
+
     static void TapCheck(KeyCode k, ref float last, ref int taps, int axis)
     {
         if (!Input.GetKeyDown(k)) return;
@@ -330,7 +312,7 @@ internal static class Drone
         bool low = false;
         try { if (_hitBox != null) _hitBox.enabled = false; low = Physics.Raycast(_pos, Vector3.down, 1.0f, ~0, QueryTriggerInteraction.Ignore) || Physics.Raycast(_pos, Vector3.up, 0.6f, ~0, QueryTriggerInteraction.Ignore); }
         catch { } finally { if (_hitBox != null) _hitBox.enabled = true; }
-        if (low) return;                                                                    // no room: ignore the trick
+        if (low) return;
         _flipAxis = axis; _flipT = 0f; _battery -= 0.006f;
     }
 
@@ -343,51 +325,50 @@ internal static class Drone
 
         float s = 1f;
         float mx = Input.GetAxisRaw("Mouse X") * s, my = Input.GetAxisRaw("Mouse Y") * s;
-        // Mouse = camera/heading (look around, the drone follows your heading). W/S forward/back, A/D left/right.
-        // Scroll wheel = altitude (up to climb, down to descend). Mouse 3 = detonate. Right click = cycle vision.
+
         _yaw += mx * 2.5f;
-        _look = Mathf.Clamp(_look - my * 1.6f, -60f, 60f);                                    // camera tilt only
+        _look = Mathf.Clamp(_look - my * 1.6f, -60f, 60f);
         float fwdIn = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
         float sideIn = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
-        // Tricks: triple-tap A/D = barrel roll that way, triple-tap W = front flip, S = back flip
+
         if (FlipMode.Value == 0)
         {
             TapCheck(KeyCode.D, ref _tapD, ref _tapsD, 1); TapCheck(KeyCode.A, ref _tapA, ref _tapsA, -1);
             TapCheck(KeyCode.W, ref _tapW, ref _tapsW, 2); TapCheck(KeyCode.S, ref _tapS, ref _tapsS, -2);
         }
         else if (FlipMode.Value == 2 ? Input.GetMouseButtonDown(1) : FlipKey.Value != KeyCode.None && Input.GetKeyDown(FlipKey.Value))
-            StartFlip(sideIn > 0f ? 1 : sideIn < 0f ? -1 : fwdIn < 0f ? -2 : 2);              // direction you're holding; none = front flip
+            StartFlip(sideIn > 0f ? 1 : sideIn < 0f ? -1 : fwdIn < 0f ? -2 : 2);
         float flipPitch = 0f, flipRoll = 0f;
         if (_flipT < 1f)
         {
             _flipT = Mathf.Min(1f, _flipT + dt / 0.55f); if (_flipT >= 1f) _flipEndAt = Time.unscaledTime;
-            float a = 360f * (_flipT * _flipT * (3f - 2f * _flipT));            // ease in, snap over the top, ease out
+            float a = 360f * (_flipT * _flipT * (3f - 2f * _flipT));
             if (Mathf.Abs(_flipAxis) == 1) flipRoll = -a * _flipAxis; else flipPitch = a * Mathf.Sign(_flipAxis);
         }
-        // Real quad feel: keys tilt the frame, tilt pushes it, air drag slows it. Let go and it levels out and coasts to a stop.
+
         float tiltMax = _kind == Kind.Attack ? 55f : 48f, resp = Response.Value / 100f;
-        _pitch = Mathf.MoveTowards(_pitch, fwdIn * tiltMax, tiltMax * 4.5f * resp * dt);   // ~0.22 s to full tilt at 100 %
+        _pitch = Mathf.MoveTowards(_pitch, fwdIn * tiltMax, tiltMax * 4.5f * resp * dt);
         _roll = Mathf.MoveTowards(_roll, sideIn * tiltMax * 0.85f, tiltMax * 4.5f * resp * dt);
-        // Scroll wheel: each notch moves the target height 0.35 m; the drone eases to it.
+
         float wheel = _axisPatched ? _wheel : Input.GetAxisRaw("Mouse ScrollWheel"); _wheel = 0f;
-        if (Mathf.Abs(wheel) > 0.001f) _altTarget -= Mathf.Sign(wheel) * Climb.Value;   // scroll toward you = up
+        if (Mathf.Abs(wheel) > 0.001f) _altTarget -= Mathf.Sign(wheel) * Climb.Value;
         float climbIn = Mathf.Clamp((_altTarget - _pos.y) * 0.8f, -1f, 1f);
         if (Mathf.Abs(_altTarget - _pos.y) < 0.04f) climbIn = 0f;
         _throttle = Mathf.Clamp01(0.5f + climbIn * 0.4f);
 
-        float maxUp = 7f * resp, maxDown = 6f * resp;                                     // ~25 km/h up, 22 down at responsiveness 1
+        float maxUp = 7f * resp, maxDown = 6f * resp;
         var flat = Quaternion.Euler(0f, _yaw, 0f);
         var wind = new Vector3(Mathf.PerlinNoise(Time.time * 0.3f, 0f) - 0.5f, 0f, Mathf.PerlinNoise(0f, Time.time * 0.3f) - 0.5f) * 0.4f;
-        // thrust from tilt (g·tan), drag against the air
+
         var push = flat * new Vector3(Mathf.Tan(_roll * Mathf.Deg2Rad), 0f, Mathf.Tan(_pitch * Mathf.Deg2Rad)) * 9.81f;
         var h = new Vector3(_vel.x, 0f, _vel.z);
         bool handsOff = fwdIn == 0f && sideIn == 0f;
-        float k1 = 0.12f * resp, k2 = (_kind == Kind.Attack ? 0.0051f : 0.0064f) * resp;   // top speed ≈ 150 / 120 km/h, 0-50 km/h in ~1.2 s
-        if (handsOff) k1 += 0.55f * resp;                                                                                 // let go: it levels and brakes, with a short glide
+        float k1 = 0.12f * resp, k2 = (_kind == Kind.Attack ? 0.0051f : 0.0064f) * resp;
+        if (handsOff) k1 += 0.55f * resp;
         var drag = -h * (k1 + k2 * h.magnitude);
         h += (push + drag + wind) * dt;
         float vy = Mathf.MoveTowards(_vel.y, climbIn > 0f ? maxUp * climbIn : maxDown * climbIn, 12f * resp * dt);
-        if (_flipT < 1f) vy = Mathf.Lerp(-1.6f, 0.6f, _flipT);                              // a flip loses lift for a moment, then it catches itself
+        if (_flipT < 1f) vy = Mathf.Lerp(-1.6f, 0.6f, _flipT);
         _vel = new Vector3(h.x, vy, h.z);
         var rot = flat * Quaternion.Euler(_pitch + flipPitch, 0f, -_roll + flipRoll);
         var next = _pos + _vel * dt;
@@ -396,7 +377,6 @@ internal static class Drone
         AiHear();
         AimTrack(dt);
 
-        // Collision
         var step = next - _pos;
         bool blocked = false;
         RaycastHit hit = default;
@@ -410,7 +390,7 @@ internal static class Drone
             {
                 try { pane.Break(hit.point, 1000f); } catch { }
                 if (_kind == Kind.Attack) { _pos = hit.point; Explode(); return; }
-                Bump(0.6f); _vel *= 0.6f; blocked = false;                                 // recon goes through the glass, a bit slower
+                Bump(0.6f); _vel *= 0.6f; blocked = false;
             }
         }
         if (blocked)
@@ -421,16 +401,16 @@ internal static class Drone
                 Health who = null; try { who = hit.collider != null ? hit.collider.GetComponentInParent<Health>() : null; } catch { }
                 bool enemy = false;
                 if (who != null) { foreach (var e in Marks.LiveEnemies()) if (e != null && e.Pointer == who.Pointer) { enemy = true; break; } }
-                if (enemy || (who == null && speed > BreakSpeed)) { _pos = hit.point + hit.normal * 0.1f; Explode(); return; }   // an enemy, or a hard hit on the world: the fuze goes
-                if (who != null && speed > BreakSpeed) { _pos = hit.point + hit.normal * 0.2f; Lose("crashed"); return; }   // you or a teammate, hard: it breaks, no blast
-                // you or a teammate, slow: it just bumps off (below)
+                if (enemy || (who == null && speed > BreakSpeed)) { _pos = hit.point + hit.normal * 0.1f; Explode(); return; }
+                if (who != null && speed > BreakSpeed) { _pos = hit.point + hit.normal * 0.2f; Lose("crashed"); return; }
+
             }
-            else if (speed > BreakSpeed) { _pos = hit.point + hit.normal * 0.2f; Lose("crashed"); return; }   // recon: comes apart
+            else if (speed > BreakSpeed) { _pos = hit.point + hit.normal * 0.2f; Lose("crashed"); return; }
             if (speed > 1.2f) Bump(Mathf.Clamp01(speed / BreakSpeed));
             next = hit.point + hit.normal * 0.25f;
             _vel = Vector3.Reflect(_vel, hit.normal) * (speed > 4f ? 0.35f : 0.15f);
-            _altTarget = next.y;                                                                   // blocked above/below: stop pushing
-            if (speed > 4f) _battery -= 0.03f;                                                   // rough bump costs battery
+            _altTarget = next.y;
+            if (speed > 4f) _battery -= 0.03f;
             _pitch *= 0.3f; _roll *= 0.3f;
         }
         _pos = next;
@@ -438,33 +418,29 @@ internal static class Drone
         float rpm = Mathf.Lerp(900f, 3600f, _throttle) * dt;
         for (int i = 0; i < 4; i++) if (_propT[i] != null) _propT[i].Rotate(0f, (i % 2 == 0 ? rpm : -rpm), 0f, Space.Self);
 
-        // Battery and signal
         _battery -= dt / (BatteryMin.Value * 60f) * (0.85f + Mathf.Abs(climbIn) * 0.25f + Mathf.Abs(_pitch) / 40f * 0.2f);
         float dist = Vector3.Distance(_pos, _home);
         _signal = Mathf.Clamp01(1f - Mathf.Pow(dist / RangeMeters, 1.6f));
         if (_battery <= 0f) { if (_kind == Kind.Attack) { Explode(); return; } Drop("battery dead"); return; }
         if (_signal <= 0.02f) { if (_kind == Kind.Attack) { Explode(); return; } Drop("signal lost"); return; }
 
-        // Operator works the tablet joystick for everyone to see
         if (Time.unscaledTime - _lastSync > 0.15f)
         {
             _lastSync = Time.unscaledTime;
             try { Pn()?.CMD_SetTabletJoyStickBlend(new Vector2(Mathf.Clamp(_roll / 35f, -1f, 1f), Mathf.Clamp(_pitch / 45f, -1f, 1f))); } catch { }
         }
 
-        // Recon marking: hold the crosshair on an enemy for 1 s
         if (_kind == Kind.Recon) Mark();
 
         try { HideAtakScreen(true); } catch { }
 
-        // Camera
         _cam = GameCam();
         if (_cam != null)
         {
             if (_fpv)
             {
-                // FPV: lens on the top plate, wide, with the front props in the bottom corners like real FPV footage
-                var lens = new Vector3(0f, 0.045f, 0.02f) * (_kind == Kind.Attack ? 1f / 0.72f : 1f);   // same spot on the frame for both (attack frame is 1/0.72 bigger)
+
+                var lens = new Vector3(0f, 0.045f, 0.02f) * (_kind == Kind.Attack ? 1f / 0.72f : 1f);
                 _camPos = _pos + rot * lens; _camRot = flat * Quaternion.Euler(_look + _pitch * 0.35f + flipPitch, 0f, flipRoll); _camFov = 115f;
             }
             else
@@ -481,7 +457,6 @@ internal static class Drone
         }
     }
 
-    // The game's tablet screen (ATAK) stays hidden on your display while you fly: you get the drone view, others get the tablet animation.
     static readonly List<Behaviour> _atakHidden = new();
     static float _nextAtak;
     static void HideAtakScreen(bool hide)
@@ -506,8 +481,6 @@ internal static class Drone
         catch (Exception e) { Game.Log.LogDebug("[Drone] atak hide: " + e.Message); }
     }
 
-    // Landing: within 3 m of you the drone goes straight back in your kit. Anywhere else it drops where it is:
-    // from 3.5 m or lower it lands in one piece and you can walk over and pick it up; higher than that it breaks.
     const float SafeDrop = 3.5f, PickupRange = 1.8f;
     static void Recall()
     {
@@ -519,7 +492,7 @@ internal static class Drone
     static void Drop(string why)
     {
         float h = HeightAboveGround();
-        if (h > SafeDrop) { _vel = Vector3.down * 6f; Lose("crashed"); return; }               // too high: it smashes when it lands
+        if (h > SafeDrop) { _vel = Vector3.down * 6f; Lose("crashed"); return; }
         if (_kind == Kind.Recon) _reconUsedUp = true; else _attackUsedUp = true;
         try
         {
@@ -547,7 +520,6 @@ internal static class Drone
         finally { if (_hitBox != null) _hitBox.enabled = true; }
     }
 
-    // Drones lying on the ground: walk up to one and press the pick-up key to put it back in your kit.
     static readonly List<(GameObject go, Kind kind)> _parked = new();
     static int _nearParked = -1;
     static void CheckPickup()
@@ -580,14 +552,12 @@ internal static class Drone
         Notice("Drone lost: " + why); End(why);
     }
 
-    // ---------- crash: pieces fly off and stay on the ground, with a breaking sound ----------
     static Material _mCarbon, _mProp, _mBatt, _mMotor; static float _scale = 1f;
     static AudioClip _crashClip;
     static readonly List<GameObject> _debris = new();
 
     static void ClearDebris() { ClearParked(); foreach (var g in _debris) { try { if (g != null) UnityEngine.Object.Destroy(g); } catch { } } _debris.Clear(); }
 
-    // The drone's own parts come off: every arm, motor, prop, plate, battery and the camera become loose physical pieces.
     static void Crash()
     {
         var pos = _pos; var vel = _vel;
@@ -602,7 +572,7 @@ internal static class Drone
                 {
                     var mf = t.GetComponent<MeshFilter>(); if (mf == null || mf.sharedMesh == null) continue;
                     var b = mf.sharedMesh.bounds; var sz = Vector3.Scale(b.size, t.lossyScale);
-                    if (sz.magnitude < 0.006f) { t.gameObject.SetActive(false); continue; }   // screws: lost in the grass
+                    if (sz.magnitude < 0.006f) { t.gameObject.SetActive(false); continue; }
                     t.SetParent(null, true);
                     t.gameObject.hideFlags = HideFlags.HideAndDontSave;
                     var bc = t.gameObject.AddComponent<BoxCollider>(); bc.center = b.center; bc.size = new Vector3(Mathf.Max(b.size.x, 0.004f), Mathf.Max(b.size.y, 0.004f), Mathf.Max(b.size.z, 0.004f));
@@ -615,7 +585,7 @@ internal static class Drone
                 catch { }
             }
         }
-        // carbon shards on top of the parts
+
         for (int k = 0; k < 10 && _mCarbon != null; k++)
         {
             var sz = new Vector3(UnityEngine.Random.Range(0.015f, 0.05f), 0.003f, UnityEngine.Random.Range(0.01f, 0.03f));
@@ -633,7 +603,6 @@ internal static class Drone
         Game.Log.LogInfo("[Drone] crashed: " + n + " pieces on the ground");
     }
 
-    // Wall bump: prop tips chattering on the wall + a hollow carbon/plastic knock.
     static AudioClip _bumpClip; static float _nextBump;
     static void Bump(float strength)
     {
@@ -647,12 +616,12 @@ internal static class Drone
                 for (int i = 0; i < len; i++)
                 {
                     float t = i / (float)sr, v = 0f;
-                    // hollow knock: frame body resonance
+
                     v += (Mathf.Sin(2f * Mathf.PI * 310f * t) * 0.6f + Mathf.Sin(2f * Mathf.PI * 760f * t) * 0.35f + Mathf.Sin(2f * Mathf.PI * 1870f * t) * 0.2f) * Mathf.Exp(-t * 38f);
-                    // contact crack
+
                     float noise = (float)rng.NextDouble() * 2f - 1f; lp += (noise - lp) * 0.35f;
                     v += (noise - lp) * Mathf.Exp(-t * 120f) * 0.9f;
-                    // prop tips chattering: 6 fast ticks over ~70 ms
+
                     for (int k = 0; k < 6; k++) { float c = 0.006f + k * 0.012f; float dt2 = t - c; if (dt2 > 0f && dt2 < 0.008f) v += ((float)rng.NextDouble() * 2f - 1f) * Mathf.Exp(-dt2 * 500f) * (0.55f - k * 0.07f); }
                     s[i] = Mathf.Clamp(v * 0.55f, -1f, 1f);
                 }
@@ -664,22 +633,21 @@ internal static class Drone
         catch { }
     }
 
-    // Generated: a hard crack, then plastic and carbon bits clattering, fading over ~1.2 s.
     static AudioClip CrashClip()
     {
         if (_crashClip != null) return _crashClip;
         const int sr = 44100; int n = (int)(sr * 1.6f);
         var s = new float[n]; var rng = new System.Random(3);
         var ticks = new List<(float at, float amp, float tone)>();
-        for (int k = 0; k < 10; k++) ticks.Add((0.004f + k * 0.009f, 0.7f, 0f));                                               // props shattering
-        for (int k = 0; k < 26; k++) { float at = 0.12f + (float)Math.Pow(rng.NextDouble(), 1.6) * 1.35f; ticks.Add((at, 0.6f * (1f - at / 1.6f), 900f + (float)rng.NextDouble() * 2600f)); }   // pieces landing and skittering
+        for (int k = 0; k < 10; k++) ticks.Add((0.004f + k * 0.009f, 0.7f, 0f));
+        for (int k = 0; k < 26; k++) { float at = 0.12f + (float)Math.Pow(rng.NextDouble(), 1.6) * 1.35f; ticks.Add((at, 0.6f * (1f - at / 1.6f), 900f + (float)rng.NextDouble() * 2600f)); }
         float lp = 0f;
         for (int i2 = 0; i2 < n; i2++)
         {
             float t = i2 / (float)sr, v = 0f;
             float noise = (float)rng.NextDouble() * 2f - 1f; lp += (noise - lp) * 0.25f;
-            v += noise * Mathf.Exp(-t * 30f) * 0.9f;                                                                // the crack
-            v += (Mathf.Sin(2f * Mathf.PI * 180f * t) * 0.6f + Mathf.Sin(2f * Mathf.PI * 470f * t) * 0.3f) * Mathf.Exp(-t * 18f);   // frame and battery thud
+            v += noise * Mathf.Exp(-t * 30f) * 0.9f;
+            v += (Mathf.Sin(2f * Mathf.PI * 180f * t) * 0.6f + Mathf.Sin(2f * Mathf.PI * 470f * t) * 0.3f) * Mathf.Exp(-t * 18f);
             foreach (var tk in ticks)
             {
                 float dt2 = t - tk.at; if (dt2 <= 0f || dt2 > 0.03f) continue;
@@ -711,10 +679,9 @@ internal static class Drone
         }
     }
 
-    const uint M67Id = 3298663573u;   // the game's thrown M67 (GrenadeExplosive + VFX + light + sound)
+    const uint M67Id = 3298663573u;
     static GrenadeExplosive _boom; static float _boomAt;
 
-    // Window glass: the game's breakable panes (GK.BreakableSurface) shatter in the blast or when a drone flies into them.
     static int BreakGlass(Vector3 at, float radius, float damage)
     {
         int n = 0;
@@ -742,7 +709,6 @@ internal static class Drone
         return null;
     }
 
-    // Does the blast at `from` reach this enemy? Bodies and glass don't stop it; a wall does; a door does unless he's right behind it.
     static bool BlastReaches(Vector3 from, Vector3 chest, Health target)
     {
         try
@@ -754,12 +720,12 @@ internal static class Drone
             {
                 var c = hit.collider; if (c == null) continue;
                 Health hh = null; try { hh = c.GetComponentInParent<Health>(); } catch { }
-                if (hh != null) continue;                                                  // a body (him or someone else)
+                if (hh != null) continue;
                 GK.BreakableSurface glass = null; try { glass = c.GetComponentInParent<GK.BreakableSurface>(); } catch { }
-                if (glass != null) continue;                                               // glass shatters, blast goes on
+                if (glass != null) continue;
                 var door = DoorOf(c);
-                if (door != null && Vector3.Distance(hit.point, from) <= 3f && Vector3.Distance(hit.point, chest) <= 1.2f) continue;   // blown door, he's right behind it
-                return false;                                                              // a wall (or a door he isn't hugging)
+                if (door != null && Vector3.Distance(hit.point, from) <= 3f && Vector3.Distance(hit.point, chest) <= 1.2f) continue;
+                return false;
             }
             return true;
         }
@@ -767,7 +733,6 @@ internal static class Drone
         finally { if (_hitBox != null) _hitBox.enabled = true; }
     }
 
-    // Doors near the blast come off their hinges (the game's own breach effect).
     static int BlowDoors(Vector3 at, float radius)
     {
         int n = 0;
@@ -789,7 +754,6 @@ internal static class Drone
         return n;
     }
 
-    // A sound you always hear in full (the camera jumps back to your operator the moment the drone is gone).
     static void Play2D(AudioClip clip, float vol)
     {
         if (clip == null) return;
@@ -811,12 +775,12 @@ internal static class Drone
                 var ge = go.GetComponent<GrenadeExplosive>();
                 if (ge != null)
                 {
-                    try { ge.minDelay = 0f; ge.maxDelay = 0f; ge.radius = 0.01f; ge.fragmentCount = 0; } catch { }   // the game's blast/fragments would hit anyone; we do the damage ourselves (enemies only)
+                    try { ge.minDelay = 0f; ge.maxDelay = 0f; ge.radius = 0.01f; ge.fragmentCount = 0; } catch { }
                     try { if (ge.grenadeMesh != null) ge.grenadeMesh.SetActive(false); } catch { }
                     try { var rb = go.GetComponent<Rigidbody>(); if (rb != null) rb.isKinematic = true; } catch { }
                     if (Mirror.NetworkServer.active) { try { Mirror.NetworkServer.Spawn(go, (GameObject)null); } catch (Exception e) { Game.Log.LogDebug("[Drone] spawn: " + e.Message); } }
                     try { ge.Explode(); } catch (Exception e) { Game.Log.LogDebug("[Drone] Explode(): " + e.Message); }
-                    _boom = ge; _boomAt = Time.unscaledTime;   // checked next frames: if the game's Explode() did nothing (not host), DoExplosion() runs the effect locally
+                    _boom = ge; _boomAt = Time.unscaledTime;
                     done = true;
                 }
                 else UnityEngine.Object.Destroy(go);
@@ -826,8 +790,7 @@ internal static class Drone
         catch (Exception e) { Game.Log.LogWarning("[Drone] explosion: " + e.Message); }
         int panes = BreakGlass(_pos, 6f, 1000f);
         if (panes > 0) Game.Log.LogInfo("[Drone] blast broke " + panes + " window(s)");
-        // Warhead: kills AI enemies within 3 m, wounds to 5 m. Never you, never teammates (the drone knows who it belongs to).
-        // The blast has to reach them: walls stop it, glass doesn't, and a door only lets it through to someone right behind it (≤ 1.2 m).
+
         int killed = 0;
         try
         {
@@ -865,7 +828,6 @@ internal static class Drone
     static float _noticeUntil; static string _notice = "";
     static void Notice(string s) { _notice = s; _noticeUntil = Time.unscaledTime + 2.5f; }
 
-    // ---------- AI: enemies hear the drone, and those who can see it open fire on it ----------
     static float _nextHear; static BrainAI[] _brains; static float _nextBrains;
     static readonly Dictionary<IntPtr, float> _seenSince = new();
     static readonly List<BrainAI> _firing = new();
@@ -876,7 +838,6 @@ internal static class Drone
         _firing.Clear();
     }
 
-    // Line of sight from his eyes to the drone. Glass and bodies don't block it (he sees through windows); walls do.
     static GK.BreakableSurface _seenPane; static Vector3 _seenPaneAt;
     static bool Sees(BrainAI b)
     {
@@ -886,7 +847,7 @@ internal static class Drone
         {
             if (_hitBox != null) _hitBox.enabled = false;
             var dir = _pos - from; float len = dir.magnitude; if (len < 0.05f) return true;
-            // field of view: only in front of him (120° cone), unless he already heard it and turned, or is already shooting it
+
             if (!_heardAt.ContainsKey(b.Pointer) && !_engaged.Contains(b.Pointer))
             {
                 var flat = dir; flat.y = 0f;
@@ -907,21 +868,16 @@ internal static class Drone
         finally { if (_hitBox != null) _hitBox.enabled = true; }
     }
 
-    // Enemies. Hear it (attack 60% / recon 40% of the see range): after a few seconds the bot turns his head toward it. Nothing is reported
-    // to the game's AI, so one bot hearing it never alerts the whole map.
-    // See it (up to the See range setting, default 20 m, also through glass): after a reaction time that grows with distance he opens fire. At most 3 shooters at once.
-    // Each second of fire can bring it down: a distance table for a drone hovering still, a much lower one for a moving drone,
-    // blended by how much it moves; flips make it nearly impossible. Real bullet hits also count.
     const float AiTick = 0.25f; const int MaxShooters = 3;
     static float See => SeeRange.Value;
-    static float ReactMul => Reaction.Value == 0 ? 1.5f : Reaction.Value == 2 ? 0.6f : 1f;                                         // tables below are written for 30 m and stretched to this
+    static float ReactMul => Reaction.Value == 0 ? 1.5f : Reaction.Value == 2 ? 0.6f : 1f;
     static readonly Dictionary<IntPtr, float> _heardAt = new(), _hearSince = new();
     static readonly HashSet<IntPtr> _engaged = new();
     static readonly float[] DistPts  = { 5f, 10f, 15f, 20f, 25f, 30f };
     static readonly float[] ReactAt  = { 2.0f, 2.6f, 3.3f, 4.1f, 5.0f, 6.0f };
     static readonly float[] StillAcc = { 0.90f, 0.70f, 0.50f, 0.35f, 0.20f, 0.10f };
     static readonly float[] MoveAcc  = { 0.30f, 0.20f, 0.10f, 0.05f, 0.02f, 0.01f };
-    static float Skill() { float k = Accuracy.Value / 55f; return k * k; }   // 15 → 0.07×, 35 → 0.4×, 50 → 0.83× of the table
+    static float Skill() { float k = Accuracy.Value / 55f; return k * k; }
     static float Table(float[] y, float d)
     {
         d = d * 30f / See;
@@ -936,10 +892,10 @@ internal static class Drone
         try
         {
             if (_brains == null || Time.unscaledTime > _nextBrains) { _brains = UnityEngine.Object.FindObjectsOfType<BrainAI>(); _nextBrains = Time.unscaledTime + 10f; }
-            if (See < 1f) { foreach (var b in _brains) if (b != null) Disengage(b); return; }   // 0 = invisible to them
+            if (See < 1f) { foreach (var b in _brains) if (b != null) Disengage(b); return; }
             float hearRange = See * (_kind == Kind.Attack ? 0.6f : 0.4f);
             float now = Time.unscaledTime;
-            // how much the drone moves: any real movement counts, fast or jinking = fully "moving"
+
             float speed = _vel.magnitude, jink = Vector3.Distance(_vel, _prevVel) / AiTick;
             float moving = Mathf.Clamp01(Mathf.Max((speed - 0.3f) / 2.5f, jink / 4f));
             bool flipping = _flipT < 1f || now - _flipEndAt < 0.4f;
@@ -953,23 +909,23 @@ internal static class Drone
                 if (dist < hearRange)
                 {
                     if (!_hearSince.ContainsKey(b.Pointer)) _hearSince[b.Pointer] = now;
-                    if (!_heardAt.ContainsKey(b.Pointer) && now - _hearSince[b.Pointer] > 2f + dist / 4f)      // placing the sound takes a moment
+                    if (!_heardAt.ContainsKey(b.Pointer) && now - _hearSince[b.Pointer] > 2f + dist / 4f)
                     { _heardAt[b.Pointer] = now; try { b.LookAtTarget(_pos, false, false, false); } catch { } }
                 }
                 else _hearSince.Remove(b.Pointer);
                 if (dist > See || !Sees(b)) { Disengage(b); continue; }
                 if (!_seenSince.ContainsKey(b.Pointer)) _seenSince[b.Pointer] = now;
                 float seen = now - _seenSince[b.Pointer];
-                if (seen < Table(ReactAt, dist) * ReactMul) continue;                                      // spotting it and bringing the gun up
-                if (!_engaged.Contains(b.Pointer) && _engaged.Count >= MaxShooters) continue;     // the rest just watch
+                if (seen < Table(ReactAt, dist) * ReactMul) continue;
+                if (!_engaged.Contains(b.Pointer) && _engaged.Count >= MaxShooters) continue;
                 if (_engaged.Add(b.Pointer))
                 {
                     _aimers.Add(b);
-                    if (_seenPane != null) { try { _seenPane.Break(_seenPaneAt, 1000f); } catch { } }   // his first shots go through the window
+                    if (_seenPane != null) { try { _seenPane.Break(_seenPaneAt, 1000f); } catch { } }
                     try { if (b.weapons != null) { b.weapons.SERVER_SetFireBool(true); _firing.Add(b); } } catch { }
                     try
                     {
-                        if (b.CurrentState != BrainAI.States.TargetSighted)                         // don't pull him out of a fight with a player
+                        if (b.CurrentState != BrainAI.States.TargetSighted)
                         {
                             var sp = AimPoint(b);
                             b._baseSuppressPosition = sp; b.LastSuppressTargetPosition = sp; b._lastSuppressTargetPosition = sp;
@@ -980,7 +936,7 @@ internal static class Drone
                     catch (Exception e) { Game.Log.LogDebug("[Drone] suppress: " + e.Message); }
                 }
                 else { try { var sp = AimPoint(b); b._baseSuppressPosition = sp; b.LastSuppressTargetPosition = sp; b._lastSuppressTargetPosition = sp; } catch { } }
-                float perSecond = Mathf.Lerp(Table(StillAcc, dist), Table(MoveAcc, dist), moving) * Skill() / (1f + Mathf.Pow(speed / 5f, 1.5f));   // speed is the real defence: 36 km/h ≈ ×0.26, 72 km/h ≈ ×0.11, 108 km/h ≈ ×0.06, at any distance
+                float perSecond = Mathf.Lerp(Table(StillAcc, dist), Table(MoveAcc, dist), moving) * Skill() / (1f + Mathf.Pow(speed / 5f, 1.5f));
                 if (flipping) perSecond *= 0.05f;
                 float pTick = 1f - Mathf.Pow(1f - Mathf.Clamp01(perSecond), AiTick);
                 if (UnityEngine.Random.value < pTick) { Game.Log.LogInfo("[Drone] shot down by AI fire at " + dist.ToString("0") + " m"); if (_kind == Kind.Attack) Explode(); else { _vel *= 0.5f; Lose("crashed"); } return; }
@@ -990,20 +946,18 @@ internal static class Drone
         catch (Exception e) { Game.Log.LogDebug("[Drone] hear: " + e.Message); }
     }
 
-    // Engaged enemies turn and aim with the game's own movement (no snapping): look target + gun IK on the drone.
     static readonly List<BrainAI> _aimers = new();
     static float _nextLook;
-    // Where he actually points: the drone, plus a miss that grows with distance and speed, re-rolled every 0.3 s,
-    // and aimed a little behind where a moving drone is. Still drone up close: nearly dead on.
+
     static readonly Dictionary<IntPtr, (Vector3 err, float at)> _aimErr = new();
     static Vector3 AimPoint(BrainAI b)
     {
         float dist = Vector3.Distance(b.transform.position, _pos), speed = _vel.magnitude;
-        // still, 5 m: ~0.2 m. still, 30 m: ~0.8 m. moving at 20 m: ~2 m. fast at 30 m+: ~3 m (capped at 3.5 m)
+
         float spread = (0.1f + dist * 0.025f) * (1f + Mathf.Min(speed, 25f) / 6f) / Skill();
         spread = Mathf.Min(spread, 3.5f);
         if (!_aimErr.TryGetValue(b.Pointer, out var e) || Time.unscaledTime - e.at > 0.3f) { e = (UnityEngine.Random.insideUnitSphere * spread, Time.unscaledTime); _aimErr[b.Pointer] = e; }
-        return _pos - _vel * Mathf.Min(0.25f, dist / 100f) + e.err;                      // lag behind a moving drone
+        return _pos - _vel * Mathf.Min(0.25f, dist / 100f) + e.err;
     }
     static void AimTrack(float dt)
     {
@@ -1028,14 +982,12 @@ internal static class Drone
         if (_engaged.Remove(b.Pointer)) { try { if (b.weapons != null) b.weapons.SERVER_SetFireBool(false); } catch { } }
     }
 
-    // ---------- sound ----------
-    // FPV motor whine, generated: four motors a few Hz apart (that beating buzz), harmonics for the saw edge, a little air noise.
     static AudioSource _audio; static AudioClip _clip;
 
     static AudioClip Clip()
     {
         if (_clip != null) return _clip;
-        const int sr = 44100, n = sr;                       // exactly 1 s, integer frequencies → seamless loop
+        const int sr = 44100, n = sr;
         var s = new float[n];
         float[] f = { 342f, 349f, 357f, 366f };
         var rng = new System.Random(7);
@@ -1047,7 +999,7 @@ internal static class Drone
                 float w = 2f * Mathf.PI * f[m] * t;
                 v += 0.35f * Mathf.Sin(w) + 0.3f * Mathf.Sin(2f * w) + 0.22f * Mathf.Sin(3f * w) + 0.14f * Mathf.Sin(4f * w) + 0.09f * Mathf.Sin(5f * w) + 0.06f * Mathf.Sin(7f * w);
             }
-            v += ((float)rng.NextDouble() - 0.5f) * 0.45f;   // air / prop wash
+            v += ((float)rng.NextDouble() - 0.5f) * 0.45f;
             s[i] = v * 0.08f;
         }
         _clip = AudioClip.Create("GRV_FPV", n, 1, sr, false);
@@ -1074,7 +1026,7 @@ internal static class Drone
         if (_audio == null) return;
         try
         {
-            // revs up when you push forward, climb, or pick up speed; settles at hover
+
             float work = Mathf.Abs(_pitch) / 28f * 0.35f + Mathf.Abs(_throttle - 0.5f) * 1.2f + Mathf.Clamp01(speed / 25f) * 0.45f;
             float pitch = 0.9f + Mathf.Clamp01(work) * 0.75f;
             _audio.pitch = Mathf.Lerp(_audio.pitch, pitch, 0.18f);
@@ -1082,8 +1034,6 @@ internal static class Drone
         }
         catch { }
     }
-
-    // ---------- model ----------
 
     static Mesh Cyl(float r, float h, int seg, float r2 = -1f)
     {
@@ -1106,7 +1056,7 @@ internal static class Drone
         var src = Shape.BaseMat(pn);
         if (src == null) { Game.Log.LogWarning("[Drone] no base material"); return; }
         bool atk = k == Kind.Attack;
-        float S = atk ? 1f : 0.72f;                                       // 7-inch vs 5-inch
+        float S = atk ? 1f : 0.72f;
         var carbon = Shape.Make(src, new Color(0.07f, 0.07f, 0.075f), 0.55f, 0.35f, Color.black);
         var motor = Shape.Make(src, atk ? new Color(0.12f, 0.12f, 0.13f) : new Color(0.55f, 0.57f, 0.6f), 0.75f, 0.9f, Color.black);
         var prop = Shape.Make(src, atk ? new Color(0.1f, 0.1f, 0.1f, 0.85f) : new Color(0.75f, 0.75f, 0.78f, 0.85f), 0.4f, 0.1f, Color.black);
@@ -1119,9 +1069,9 @@ internal static class Drone
         _mCarbon = carbon; _mProp = prop; _mBatt = batt; _mMotor = motor; _scale = S;
 
         _root = new GameObject("GRV_Drone") { hideFlags = HideFlags.HideAndDontSave };
-        _hitBox = _root.AddComponent<SphereCollider>(); _hitBox.radius = 0.09f * S;   // bullets can hit the body (props are mostly air)
+        _hitBox = _root.AddComponent<SphereCollider>(); _hitBox.radius = 0.09f * S;
         var r = _root.transform;
-        // Frame: two X arms + top/bottom plates + standoffs
+
         float arm = 0.165f * S, armW = 0.016f * S, armT = 0.005f * S;
         for (int i = 0; i < 2; i++)
         {
@@ -1133,9 +1083,9 @@ internal static class Drone
         Shape.Part("PlateTop", Shape.Box(new Vector3(0.085f * S, 0.003f, 0.11f * S)), carbon, r, new Vector3(0f, 0.032f * S, 0f));
         foreach (var p in new[] { (-0.03f, -0.04f), (0.03f, -0.04f), (-0.03f, 0.04f), (0.03f, 0.04f) })
             Shape.Part("Standoff", Cyl(0.0035f, 0.028f * S, 8), motor, r, new Vector3(p.Item1 * S, 0.018f * S, p.Item2 * S));
-        // Flight stack between plates
+
         Shape.Part("FC", Shape.Box(new Vector3(0.036f * S, 0.012f * S, 0.036f * S)), new Material(body) { color = new Color(0.05f, 0.2f, 0.08f) }, r, new Vector3(0f, 0.016f * S, 0f));
-        // Motors + props + LEDs at the arm ends
+
         for (int i = 0; i < 4; i++)
         {
             float a = (45f + 90f * i) * Mathf.Deg2Rad;
@@ -1157,7 +1107,7 @@ internal static class Drone
             _propT[i] = hub.transform;
             if (i >= 2) Shape.Part("LED", Shape.Box(new Vector3(0.012f * S, 0.004f, 0.006f * S)), led, r, p + new Vector3(0f, -0.001f, -0.012f * S));
         }
-        // Motor wires (3 per arm) + ESC blocks + screws
+
         for (int i = 0; i < 4; i++)
         {
             float a = (45f + 90f * i) * Mathf.Deg2Rad; var dir = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
@@ -1174,16 +1124,16 @@ internal static class Drone
             foreach (var sx in new[] { -0.009f, 0.009f })
                 Shape.Part("Screw", Cyl(0.002f, 0.0025f, 8), motor, r, dir * (arm - 0.006f * S) + new Vector3(sx * S, 0.007f, 0f));
         }
-        // VTX + receiver boards on the stack, XT60 at the back
+
         Shape.Part("VTX", Shape.Box(new Vector3(0.03f * S, 0.006f * S, 0.03f * S)), new Material(body) { color = new Color(0.1f, 0.1f, 0.12f) }, r, new Vector3(0f, 0.026f * S, 0f));
         Shape.Part("XT60", Shape.Box(new Vector3(0.016f * S, 0.008f * S, 0.008f * S)), new Material(body) { color = new Color(0.9f, 0.75f, 0.1f) }, r, new Vector3(0f, 0.04f * S, -0.06f * S));
-        // Battery on top with strap
+
         Shape.Part("Battery", Shape.Box(new Vector3(0.042f * S, 0.034f * S, 0.075f * S)), batt, r, new Vector3(0f, 0.052f * S, -0.01f * S));
         Shape.Part("Strap", Shape.Box(new Vector3(0.05f * S, 0.04f * S, 0.018f * S)), strap, r, new Vector3(0f, 0.052f * S, -0.01f * S));
         Shape.Part("BattLead", Cyl(0.002f, 0.04f * S, 6), led, r, new Vector3(0.012f * S, 0.06f * S, 0.03f * S));
         Shape.Part("Buckle", Shape.Box(new Vector3(0.014f * S, 0.044f * S, 0.02f * S)), motor, r, new Vector3(0.028f * S, 0.052f * S, -0.01f * S));
         Shape.Part("BattLabel", Shape.Box(new Vector3(0.0425f * S, 0.02f * S, 0.03f * S)), new Material(body) { color = new Color(0.85f, 0.85f, 0.85f) }, r, new Vector3(0f, 0.052f * S, -0.012f * S));
-        // Camera: tilted mount at the front with a lens
+
         var camMount = new GameObject("CamMount") { hideFlags = HideFlags.HideAndDontSave };
         camMount.transform.SetParent(r, false); camMount.transform.localPosition = new Vector3(0f, 0.02f * S, 0.06f * S); camMount.transform.localRotation = Quaternion.Euler(-25f, 0f, 0f);
         Shape.Part("CamBody", Shape.Box(new Vector3(0.022f * S, 0.022f * S, 0.024f * S)), body, camMount.transform, Vector3.zero);
@@ -1193,7 +1143,7 @@ internal static class Drone
         Shape.Part("CamSidePlateR", Shape.Box(new Vector3(0.003f, 0.028f * S, 0.03f * S)), carbon, camMount.transform, new Vector3(0.013f * S, 0f, -0.004f * S));
         if (atk)
         {
-            // Payload slung under the frame: RPG-style warhead with a fuze, zip-tied
+
             Shape.Part("WarheadBody", Cyl(0.021f * S, 0.12f * S, 16), olive, r, new Vector3(0f, -0.032f * S, 0f));
             var cone = new GameObject("Cone") { hideFlags = HideFlags.HideAndDontSave };
             cone.transform.SetParent(r, false); cone.transform.localPosition = new Vector3(0f, -0.032f * S, 0.095f * S); cone.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
@@ -1201,7 +1151,7 @@ internal static class Drone
             Shape.Part("Fuze", Cyl(0.006f * S, 0.03f * S, 10), motor, cone.transform, new Vector3(0f, 0.045f * S, 0f));
             Shape.Part("Tie1", Shape.Box(new Vector3(0.05f * S, 0.05f * S, 0.006f)), strap, r, new Vector3(0f, -0.02f * S, 0.03f * S));
             Shape.Part("Tie2", Shape.Box(new Vector3(0.05f * S, 0.05f * S, 0.006f)), strap, r, new Vector3(0f, -0.02f * S, -0.03f * S));
-            // Twin VTX antennas at the back
+
             foreach (var x in new[] { -0.02f, 0.02f })
             {
                 var ant = new GameObject("Ant") { hideFlags = HideFlags.HideAndDontSave };
@@ -1212,7 +1162,7 @@ internal static class Drone
         }
         else
         {
-            // Recon: gimbal dome under the nose + GPS puck + single antenna
+
             Shape.Part("Gimbal", Cyl(0.016f * S, 0.03f * S, 16), body, r, new Vector3(0f, -0.014f * S, 0.045f * S));
             Shape.Part("GimbalLens", Cyl(0.006f * S, 0.006f, 12), lens, r, new Vector3(0f, -0.02f * S, 0.062f * S));
             Shape.Part("GPS", Cyl(0.014f * S, 0.006f, 16), body, r, new Vector3(0f, 0.075f * S, -0.03f * S));
@@ -1232,8 +1182,6 @@ internal static class Drone
         catch { }
         Game.Log.LogInfo("[Drone] model built (" + (atk ? "attack 7in" : "recon 5in") + ")");
     }
-
-    // ---------- HUD ----------
 
     internal static void Draw()
     {
@@ -1255,7 +1203,7 @@ internal static class Drone
         var col = Color.white;
         GUI.color = col; GUI.contentColor = col;
         float cx = W / 2f;
-        // Compass strip
+
         for (int dgr = -60; dgr <= 60; dgr += 5)
         {
             float hd = Mathf.Repeat(_yaw + dgr, 360f);
@@ -1265,11 +1213,11 @@ internal static class Drone
             if (major) { string n = ((int)Mathf.Round(hd / 45f) % 8) switch { 0 => "N", 1 => "NE", 2 => "E", 3 => "SE", 4 => "S", 5 => "SW", 6 => "W", _ => "NW" }; GUI.Label(new Rect(x - 12, 36f, 40, 20), n); }
         }
         GUI.DrawTexture(new Rect(cx - 1f, 18f, 2f, 22f), _px);
-        // Crosshair dot + range to what it is on
+
         GUI.DrawTexture(new Rect(cx - 2f, H / 2f - 2f, 4f, 4f), _px);
         if (_cam != null && Physics.Raycast(_cam.transform.position, _cam.transform.forward, out var hit, 3000f, ~0, QueryTriggerInteraction.Ignore))
             GUI.Label(new Rect(cx + 14f, H / 2f - 10f, 90f, 22f), Mathf.RoundToInt(hit.distance) + " m");
-        // Bottom bar: battery, speed, altitude, signal, clock
+
         float by = H - 70f;
         GUI.DrawTexture(new Rect(cx - 190f, by, 44f, 18f), _px); GUI.color = new Color(0, 0, 0, 1); GUI.DrawTexture(new Rect(cx - 188f, by + 2f, 40f, 14f), _px);
         GUI.color = _battery < 0.2f ? new Color(1f, 0.3f, 0.2f) : col; GUI.DrawTexture(new Rect(cx - 187f, by + 3f, 38f * Mathf.Clamp01(_battery), 12f), _px);
@@ -1284,7 +1232,7 @@ internal static class Drone
         var t = TimeSpan.FromSeconds(Time.unscaledTime - _startAt);
         GUI.Label(new Rect(cx - 90f, by + 22f, 260f, 20f), t.ToString(@"mm\:ss") + "    " + Mathf.RoundToInt(Vector3.Distance(_pos, _home)) + " m from you");
         GUI.Label(new Rect(16f, H - 28f, 700f, 20f), (_kind == Kind.Attack ? "ATTACK   " + DetonateKey.Value + " detonate   " : "RECON   hold crosshair 1 s to mark   ") + "W/S fwd/back   A/D left/right   scroll up/down   mouse look   V view   " + (FlipMode.Value == 0 ? "triple-tap W/S/A/D flip" : (FlipMode.Value == 2 ? "right click" : FlipKey.Value.ToString()) + " + W/S/A/D flip") + "   Backspace recall");
-        // Recon mark progress
+
         if (_kind == Kind.Recon && _markTarget != null)
         {
             float f = Mathf.Clamp01((Time.unscaledTime - _markAt) / 1f);
@@ -1293,7 +1241,6 @@ internal static class Drone
         GUI.color = Color.white;
     }
 
-    // Thermal first pass: bodies as hot blobs along the bones
     static void ThermalBodies()
     {
         if (_cam == null) return;
@@ -1317,7 +1264,6 @@ internal static class Drone
     }
 }
 
-// Small mesh/material helpers for the drone model (materials are clones of one of the game's own HDRP materials).
 internal static class Shape
 {
     internal static Mesh Finish(List<Vector3> v, List<int> tri)
@@ -1343,7 +1289,7 @@ internal static class Shape
             tri.AddRange(new[] { b, b + 2, b + 1, b, b + 3, b + 2 });
         }
         var m = Finish(v, tri);
-        // fix winding per face so normals point out
+
         var tris = m.triangles; var verts = m.vertices;
         for (int i = 0; i < tris.Length; i += 3)
         {

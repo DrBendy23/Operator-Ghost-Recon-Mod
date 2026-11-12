@@ -5,15 +5,12 @@ using UnityEngine;
 
 namespace GhostReconView;
 
-// Auto lean (CQB): when you aim past the edge of cover (your eyes see the room, one shoulder is still behind the wall),
-// your operator leans to that side by himself. It flips the game's own lean switches (MasterController.toggleLeanLeft/Right),
-// the same ones your lean buttons flip, so the game animates and syncs it. Your own lean buttons always win.
 internal static class AutoLean
 {
     internal static ConfigEntry<bool> On;
     internal static ConfigEntry<float> Reach;
 
-    static int _want;            // -1 left, 0 none, +1 right
+    static int _want;
     static float _since; static int _raw;
     static System.Reflection.MethodInfo _cast;
 
@@ -62,7 +59,7 @@ internal static class AutoLean
             float r = Reach.Value;
             if (!Wall(eyes, aim, 2.5f, me))
             {
-                // cover side: shoulder blocked close. open side: shoulder AND a wider point clear (so a door frame you walk through does nothing)
+
                 bool shL = Wall(eyes - right * 0.45f, aim, r, me), shR = Wall(eyes + right * 0.45f, aim, r, me);
                 if (shL && !shR && !Wall(eyes + right * 0.8f, aim, r + 0.3f, me)) raw = -1;
                 else if (shR && !shL && !Wall(eyes - right * 0.8f, aim, r + 0.3f, me)) raw = 1;
@@ -70,7 +67,7 @@ internal static class AutoLean
         }
         if (raw != _raw) { _raw = raw; _since = Time.unscaledTime; }
         float held = Time.unscaledTime - _since;
-        bool flip = raw != 0 && _want != 0 && raw != _want;                      // other side: switch at once
+        bool flip = raw != 0 && _want != 0 && raw != _want;
         if (raw != _want && (flip || (raw != 0 ? held > 0.02f : held > 0.25f))) Set(raw, mc);
     }
 
@@ -91,7 +88,7 @@ internal static class AutoLean
     }
 
     static bool _logged;
-    // Right after the game computed this frame's lean, push ours in: the animator and the network sync (CMD_UpdateValues) read it from here.
+
     public static void AfterUpdate(MasterController __instance)
     {
         if (_want == 0 && !Game.DroneFlying) return;
@@ -100,7 +97,7 @@ internal static class AutoLean
             if (__instance == null || __instance.playerNetworking == null || __instance.playerNetworking.Pointer != PlayerMaster.MyPlayerMaster?.PlayerSpawnedObject?.Pointer) return;
             var pl = __instance.playerLean; if (pl == null) return;
             if (Game.DroneFlying) { pl.output = Mathf.MoveTowards(pl.output, 0f, Mathf.Abs(pl.outputMax - pl.outputMin) * 3.5f * Time.deltaTime); return; }
-            float target = _want > 0 ? pl.outputMin : pl.outputMax;   // game: outputMax = left side
+            float target = _want > 0 ? pl.outputMin : pl.outputMax;
             if (!_logged) { _logged = true; Plugin.Out.LogInfo("[Lean] output range " + pl.outputMin + " .. " + pl.outputMax + ", now " + pl.output); }
             pl.output = Mathf.MoveTowards(pl.output, target, Mathf.Abs(pl.outputMax - pl.outputMin) * 5.5f * Time.deltaTime);
         }

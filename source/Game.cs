@@ -6,7 +6,6 @@ using UnityEngine;
 
 namespace GhostReconView;
 
-// Small shared helpers: logging, the third-person camera (if the BASS mod is installed), your player and its controllers.
 internal static class Game
 {
     internal static ManualLogSource Log;
@@ -40,7 +39,6 @@ internal static class Game
     }
     internal static CMF.CameraController CamOf(PlayerNetworking pn) { var mc = MasterOf(pn); try { return mc != null ? mc.cameraController : null; } catch { return null; } }
 
-    // Is a drone in the air? Works whether the drone lives in this mod or in the separate Drone Operator mod.
     static System.Reflection.PropertyInfo _flying; static bool _flyLooked;
     internal static bool DroneFlying
     {
