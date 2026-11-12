@@ -1,4 +1,4 @@
-# Ghost Recon View 2.0 — 1st + 3rd person view, Drone mode, Mac setup
+# Ghost Recon View 2.0.1 — 1st + 3rd person view, Drone mode, Mac setup
 
 Mods for **OPERATOR**. By Dr. Bendy. Works on Windows and Mac.
 
@@ -21,12 +21,13 @@ Standalone. Works with or without Ghost Recon View.
 ![Attack drone](screenshots/04-attack-drone.jpg)
 
 - **Recon drone** `[` — 5-inch quad. Hold the crosshair on an enemy for a second to mark him. Land it within 3 m of you to get it back
-- **Attack drone** `]` — 7-inch FPV with a warhead. Side mouse button or hitting someone = boom. One per mission
+- **Attack drone** `]` — 7-inch FPV with a warhead. Detonate key (default mouse 4) or hitting someone = boom. Breaks windows and blows doors open; the blast stops at walls. One per mission
 - Your operator holds the game's tablet while you fly (everyone sees that)
 - Chase view and FPV view (V). Night vision works in the drone view (N)
 - W/S A/D move, scroll wheel for height, mouse to look, Backspace to land
+- Tricks: triple-tap A/D to roll, W front flip, S back flip, or switch Flip mode to hold a direction + Flip key (needs ~1 m of air under it)
 - Real-ish physics: it banks, coasts and brakes. ~70 km/h recon, ~85 km/h attack. Hit a wall above ~15 km/h and it breaks into pieces that stay on the ground
-- Enemies hear it, see it and shoot it down
+- Enemies hear it, open fire and shoot it down. Zigzags, fast passes and flips throw their aim off (shoot-down time is a setting)
 - Battery ~2 min (setting), FPV motor sound, HUD with compass, battery and signal
 
 ![FPV](screenshots/07-fpv-view.jpg)

@@ -12,7 +12,7 @@ using UnityEngine.Events;
 
 namespace GhostReconView;
 
-[BepInPlugin(Guid, "Ghost Recon View", "1.2")]
+[BepInPlugin(Guid, "Ghost Recon View", "2.0.1")]
 [BepInDependency("community.operator.thirdperson", BepInDependency.DependencyFlags.HardDependency)]
 [BepInDependency("local.operator.modcontrols", BepInDependency.DependencyFlags.SoftDependency)]
 public class Plugin : BasePlugin
@@ -55,7 +55,7 @@ public class Plugin : BasePlugin
         try { LaserBeams.Init(Config); } catch (Exception e) { Out.LogWarning(e.Message); }
         try { AutoLean.Init(Config); AutoLean.InitPatches(harmony); } catch (Exception e) { Out.LogWarning("[Lean] " + e.Message); }
         try { SmartReload.Init(Config, harmony); } catch (Exception e) { Out.LogWarning("[Reload] " + e.Message); }
-        try { MenuBridge.Register(); MenuBridge.PatchMenu(harmony); } catch { }
+        try { MenuBridge.Register(); } catch { }
 
         ClassInjector.RegisterTypeInIl2Cpp<AimBehaviour>();
         AddComponent<AimBehaviour>();

@@ -15,44 +15,6 @@ internal static class MenuBridge
     internal static bool Dirty;
     static bool _hooked;
 
-    // The controls menu folds each group's sliders/toggles behind one "Mod settings" button (keys stay visible; that part is
-    // the menu's own layout). We make the button act on every group at once: one click shows or hides all settings.
-    static readonly List<object> _folds = new();
-    static bool _syncing;
-
-    internal static void PatchMenu(Harmony h)
-    {
-        try
-        {
-            var fold = AccessTools.TypeByName("OperatorModControls.SettingsFoldout");
-            var ctor = AccessTools.Constructor(fold, Type.EmptyTypes) ?? AccessTools.FirstConstructor(fold, c => true);
-            if (ctor != null) h.Patch(ctor, postfix: new HarmonyMethod(typeof(MenuBridge), nameof(FoldMade)));
-            var tog = AccessTools.Method(fold, "Toggle");
-            if (tog != null) h.Patch(tog, postfix: new HarmonyMethod(typeof(MenuBridge), nameof(FoldToggled)));
-        }
-        catch (Exception e) { Plugin.Out.LogWarning("[Menu] " + e.Message); }
-    }
-
-    public static void FoldMade(object __instance) { _folds.Add(__instance); }
-
-    public static void FoldToggled(object __instance)
-    {
-        if (_syncing) return;
-        _syncing = true;
-        try
-        {
-            var open = AccessTools.Property(__instance.GetType(), "Open");
-            bool v = (bool)open.GetValue(__instance);
-            foreach (var f in _folds) { try { if (f != null && f != __instance) open.SetValue(f, v); } catch { } }
-            var menu = AccessTools.TypeByName("OperatorModControls.ControlsMenu");
-            var sections = AccessTools.Field(menu, "Sections")?.GetValue(null) as System.Collections.IList;
-            var refresh = AccessTools.Method(menu, "RefreshSettingsPanels");
-            if (sections != null && refresh != null) foreach (var s in sections) { try { refresh.Invoke(null, new[] { s }); } catch { } }
-        }
-        catch (Exception e) { Plugin.Out.LogDebug("[Menu] " + e.Message); }
-        _syncing = false;
-    }
-
     internal static void Register()
     {
         string id = Plugin.Guid;

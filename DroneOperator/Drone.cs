@@ -9,12 +9,13 @@ namespace GhostReconView;
 // Two drones, one of each per mission:
 //  - Recon (5-inch): reusable, marks enemies you hold the crosshair on for 1 s
 //  - Attack (7-inch FPV): explodes on impact or on left click, damages AI in a radius
-// W/S forward/back, A/D left/right, scroll wheel up/down, mouse to look, mouse 3 detonate, V view, Backspace recall.
+// W/S forward/back, A/D left/right, scroll wheel up/down, mouse to look, detonate key (default mouse 4), V view, Backspace recall.
 // While you fly: your operator holds the game's own tablet (everyone sees that), gets no input, and the camera is the drone's.
 internal static class Drone
 {
-    internal static ConfigEntry<KeyCode> ReconKey, AttackKey;
-    internal static ConfigEntry<float> BatteryMin, Response;
+    internal static ConfigEntry<KeyCode> ReconKey, AttackKey, DetonateKey, FlipKey;
+    internal static ConfigEntry<float> BatteryMin, Response, ShootDown;
+    internal static ConfigEntry<int> FlipMode;
 
     enum Kind { None, Recon, Attack }
     static Kind _kind;
@@ -35,6 +36,10 @@ internal static class Drone
     {
         ReconKey = cfg.Bind("Drone", "ReconKeyV4", KeyCode.LeftBracket, "Deploy / recall the recon drone.");
         AttackKey = cfg.Bind("Drone", "AttackKeyV4", KeyCode.RightBracket, "Deploy the attack drone.");
+        FlipMode = cfg.Bind("Drone", "FlipMode", 0, new ConfigDescription("0 = triple-tap W/A/S/D to flip that way. 1 = hold W/A/S/D and press the Flip key.", new AcceptableValueRange<int>(0, 1)));
+        FlipKey = cfg.Bind("Drone", "FlipKey", KeyCode.F, "Do a trick: hold W (front flip), S (back flip), A or D (roll) and press this. Triple-tapping a direction works too.");
+        DetonateKey = cfg.Bind("Drone", "DetonateKey", KeyCode.Mouse3, "Detonate the attack drone while flying it.");
+        ShootDown = cfg.Bind("Drone", "EnemyShootDownSeconds", 5f, new ConfigDescription("How long enemies need to keep shooting at the drone before they bring it down, in seconds.", new AcceptableValueRange<float>(1f, 15f)));
         Response = cfg.Bind("Drone", "Responsiveness", 100f, new ConfigDescription("How quickly the drone reacts and stops, percent. Lower = floatier, higher = snappier.", new AcceptableValueRange<float>(50f, 200f)));
         BatteryMin = cfg.Bind("Drone", "BatteryMinutesV2", 2f, new ConfigDescription("Flight time, minutes.", new AcceptableValueRange<float>(1f, 10f)));
     }
@@ -240,7 +245,7 @@ internal static class Drone
         Vector3 fwd = Vector3.forward; try { fwd = cc != null ? Vector3.ProjectOnPlane(cc.GetAimingDirection(), Vector3.up).normalized : pn.transform.forward; } catch { }
         _kind = k; _exploded = false; _fpv = false;
         _home = pn.transform.position + Vector3.up * 1.2f + fwd * 1.0f;
-        _pos = _home; _vel = Vector3.zero; _yaw = Quaternion.LookRotation(fwd).eulerAngles.y; _pitch = _roll = 0f;
+        _pos = _home; _vel = Vector3.zero; _yaw = Quaternion.LookRotation(fwd).eulerAngles.y; _pitch = _roll = 0f; _flipT = 1f;
         _battery = 1f; _signal = 1f; _startAt = Time.unscaledTime; _markTarget = null; _look = 0f; _altTarget = _pos.y;
         Build(pn, k);
         StartSound();
@@ -261,6 +266,7 @@ internal static class Drone
         try { if (_cam != null && _fov0 > 0f) _cam.fieldOfView = _fov0; } catch { }
         try { if (_cam != null && _near0 > 0f) _cam.nearClipPlane = _near0; } catch { }
         _near0 = -1f;
+        StopAiFire(); _aimed.Clear();
         _audio = null; _hitBox = null; _seenSince.Clear();
         try { if (_root != null) UnityEngine.Object.Destroy(_root); } catch { }
         _root = null; _cam = null; _camReady = false;
@@ -300,12 +306,32 @@ internal static class Drone
 
     // ---------- flight ----------
 
+    static float _flipT = 1f, _tapW, _tapS, _tapA, _tapD; static int _flipAxis, _tapsW, _tapsS, _tapsA, _tapsD;
+    // Triple-tap a key within 0.6 s to do the trick (taps are counted per key; a pause resets the count).
+    static void TapCheck(KeyCode k, ref float last, ref int taps, int axis)
+    {
+        if (!Input.GetKeyDown(k)) return;
+        float t = Time.unscaledTime;
+        taps = t - last < 0.3f ? taps + 1 : 1;
+        last = t;
+        if (taps >= 3) { taps = 0; StartFlip(axis); }
+    }
+    static void StartFlip(int axis)
+    {
+        if (_flipT < 1f || Time.unscaledTime - _startAt < 1f) return;
+        bool low = false;
+        try { if (_hitBox != null) _hitBox.enabled = false; low = Physics.Raycast(_pos, Vector3.down, 1.0f, ~0, QueryTriggerInteraction.Ignore) || Physics.Raycast(_pos, Vector3.up, 0.6f, ~0, QueryTriggerInteraction.Ignore); }
+        catch { } finally { if (_hitBox != null) _hitBox.enabled = true; }
+        if (low) return;                                                                    // no room: ignore the trick
+        _flipAxis = axis; _flipT = 0f; _battery -= 0.006f;
+    }
+
     static void Fly()
     {
         float dt = Mathf.Min(Time.deltaTime, 0.05f);
         if (Input.GetKeyDown(KeyCode.Backspace)) { Recall(); return; }
         if (Input.GetKeyDown(KeyCode.V)) _fpv = !_fpv;
-        if (_kind == Kind.Attack && (Input.GetMouseButtonDown(2) || Input.GetMouseButtonDown(3) || Input.GetMouseButtonDown(4))) { Explode(); return; }   // middle or either side button
+        if (_kind == Kind.Attack && Input.GetKeyDown(DetonateKey.Value)) { Explode(); return; }
 
         float s = 1f;
         float mx = Input.GetAxisRaw("Mouse X") * s, my = Input.GetAxisRaw("Mouse Y") * s;
@@ -315,6 +341,21 @@ internal static class Drone
         _look = Mathf.Clamp(_look - my * 1.6f, -60f, 60f);                                    // camera tilt only
         float fwdIn = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
         float sideIn = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
+        // Tricks: triple-tap A/D = barrel roll that way, triple-tap W = front flip, S = back flip
+        if (FlipMode.Value == 0)
+        {
+            TapCheck(KeyCode.D, ref _tapD, ref _tapsD, 1); TapCheck(KeyCode.A, ref _tapA, ref _tapsA, -1);
+            TapCheck(KeyCode.W, ref _tapW, ref _tapsW, 2); TapCheck(KeyCode.S, ref _tapS, ref _tapsS, -2);
+        }
+        else if (FlipKey.Value != KeyCode.None && Input.GetKeyDown(FlipKey.Value))
+            StartFlip(sideIn > 0f ? 1 : sideIn < 0f ? -1 : fwdIn < 0f ? -2 : 2);              // direction you're holding; none = front flip
+        float flipPitch = 0f, flipRoll = 0f;
+        if (_flipT < 1f)
+        {
+            _flipT = Mathf.Min(1f, _flipT + dt / 0.55f); if (_flipT >= 1f) _flipEndAt = Time.unscaledTime;
+            float a = 360f * (_flipT * _flipT * (3f - 2f * _flipT));            // ease in, snap over the top, ease out
+            if (Mathf.Abs(_flipAxis) == 1) flipRoll = -a * _flipAxis; else flipPitch = a * Mathf.Sign(_flipAxis);
+        }
         // Real quad feel: keys tilt the frame, tilt pushes it, air drag slows it. Let go and it levels out and coasts to a stop.
         float tiltMax = _kind == Kind.Attack ? 42f : 34f, resp = Response.Value / 100f;
         _pitch = Mathf.MoveTowards(_pitch, fwdIn * tiltMax, tiltMax * 4.5f * resp * dt);   // ~0.22 s to full tilt at 100 %
@@ -338,8 +379,9 @@ internal static class Drone
         var drag = -h * (k1 + k2 * h.magnitude);
         h += (push + drag + wind) * dt;
         float vy = Mathf.MoveTowards(_vel.y, climbIn > 0f ? maxUp * climbIn : maxDown * climbIn, 4f * dt);
+        if (_flipT < 1f) vy = Mathf.Lerp(-1.6f, 0.6f, _flipT);                              // a flip loses lift for a moment, then it catches itself
         _vel = new Vector3(h.x, vy, h.z);
-        var rot = flat * Quaternion.Euler(_pitch, 0f, -_roll);
+        var rot = flat * Quaternion.Euler(_pitch + flipPitch, 0f, -_roll + flipRoll);
         var next = _pos + _vel * dt;
 
         UpdateSound(_vel.magnitude);
@@ -351,6 +393,17 @@ internal static class Drone
         RaycastHit hit = default;
         try { if (_hitBox != null) _hitBox.enabled = false; blocked = step.magnitude > 0.001f && Physics.SphereCast(_pos, 0.18f, step.normalized, out hit, step.magnitude + 0.05f, ~0, QueryTriggerInteraction.Ignore); }
         finally { if (_hitBox != null) _hitBox.enabled = true; }
+        if (blocked)
+        {
+            float speed = _vel.magnitude;
+            GK.BreakableSurface pane = null; try { pane = hit.collider != null ? hit.collider.GetComponentInParent<GK.BreakableSurface>() : null; } catch { }
+            if (pane != null && speed > 2f)
+            {
+                try { pane.Break(hit.point, 1000f); } catch { }
+                if (_kind == Kind.Attack) { _pos = hit.point; Explode(); return; }
+                Bump(0.6f); _vel *= 0.6f; blocked = false;                                 // recon goes through the glass, a bit slower
+            }
+        }
         if (blocked)
         {
             float speed = _vel.magnitude;
@@ -398,8 +451,8 @@ internal static class Drone
             if (_fpv)
             {
                 // FPV: lens on the top plate, wide, with the front props in the bottom corners like real FPV footage
-                var lens = _kind == Kind.Attack ? new Vector3(0f, 0.11f, 0.09f) : new Vector3(0f, 0.045f, 0.02f);
-                _camPos = _pos + rot * lens; _camRot = flat * Quaternion.Euler(_look + _pitch * 0.35f, 0f, 0f); _camFov = 115f;
+                var lens = new Vector3(0f, 0.045f, 0.02f) * (_kind == Kind.Attack ? 1f / 0.72f : 1f);   // same spot on the frame for both (attack frame is 1/0.72 bigger)
+                _camPos = _pos + rot * lens; _camRot = flat * Quaternion.Euler(_look + _pitch * 0.35f + flipPitch, 0f, flipRoll); _camFov = 115f;
             }
             else
             {
@@ -522,7 +575,7 @@ internal static class Drone
             _debris.Add(go); n++;
         }
         while (_debris.Count > 150) { try { if (_debris[0] != null) UnityEngine.Object.Destroy(_debris[0]); } catch { } _debris.RemoveAt(0); }
-        try { AudioSource.PlayClipAtPoint(CrashClip(), pos, 1f); } catch (Exception e) { Game.Log.LogDebug("[Drone] crash sound: " + e.Message); }
+        try { Play2D(CrashClip(), 1f); } catch (Exception e) { Game.Log.LogDebug("[Drone] crash sound: " + e.Message); }
         Game.Log.LogInfo("[Drone] crashed: " + n + " pieces on the ground");
     }
 
@@ -607,6 +660,90 @@ internal static class Drone
     const uint M67Id = 3298663573u;   // the game's thrown M67 (GrenadeExplosive + VFX + light + sound)
     static GrenadeExplosive _boom; static float _boomAt;
 
+    // Window glass: the game's breakable panes (GK.BreakableSurface) shatter in the blast or when a drone flies into them.
+    static int BreakGlass(Vector3 at, float radius, float damage)
+    {
+        int n = 0;
+        try
+        {
+            var seen = new HashSet<IntPtr>();
+            foreach (var c in Physics.OverlapSphere(at, radius, ~0, QueryTriggerInteraction.Collide))
+            {
+                if (c == null) continue;
+                GK.BreakableSurface g = null; try { g = c.GetComponentInParent<GK.BreakableSurface>(); } catch { }
+                if (g == null || !seen.Add(g.Pointer)) continue;
+                try { g.Break(c.ClosestPoint(at), damage); n++; } catch (Exception e) { Game.Log.LogDebug("[Drone] glass: " + e.Message); }
+            }
+        }
+        catch (Exception e) { Game.Log.LogDebug("[Drone] glass scan: " + e.Message); }
+        return n;
+    }
+
+    static DoorV2 DoorOf(Collider c)
+    {
+        if (c == null) return null;
+        try { var d = c.GetComponentInParent<DoorV2>(); if (d != null) return d; } catch { }
+        try { var hb = c.GetComponentInParent<DoorHitBox>(); if (hb != null && hb.Door != null) return hb.Door; } catch { }
+        try { var sp = c.GetComponentInParent<ShootableDoorPart>(); if (sp != null && sp.Door != null) return sp.Door; } catch { }
+        return null;
+    }
+
+    // Does the blast at `from` reach this enemy? Bodies and glass don't stop it; a wall does; a door does unless he's right behind it.
+    static bool BlastReaches(Vector3 from, Vector3 chest, Health target)
+    {
+        try
+        {
+            if (_hitBox != null) _hitBox.enabled = false;
+            var dir = chest - from; float len = dir.magnitude; if (len < 0.05f) return true;
+            var hits = Physics.RaycastAll(from, dir / len, len, ~0, QueryTriggerInteraction.Ignore);
+            foreach (var hit in hits)
+            {
+                var c = hit.collider; if (c == null) continue;
+                Health hh = null; try { hh = c.GetComponentInParent<Health>(); } catch { }
+                if (hh != null) continue;                                                  // a body (him or someone else)
+                GK.BreakableSurface glass = null; try { glass = c.GetComponentInParent<GK.BreakableSurface>(); } catch { }
+                if (glass != null) continue;                                               // glass shatters, blast goes on
+                var door = DoorOf(c);
+                if (door != null && Vector3.Distance(hit.point, from) <= 3f && Vector3.Distance(hit.point, chest) <= 1.2f) continue;   // blown door, he's right behind it
+                return false;                                                              // a wall (or a door he isn't hugging)
+            }
+            return true;
+        }
+        catch { return true; }
+        finally { if (_hitBox != null) _hitBox.enabled = true; }
+    }
+
+    // Doors near the blast come off their hinges (the game's own breach effect).
+    static int BlowDoors(Vector3 at, float radius)
+    {
+        int n = 0;
+        try
+        {
+            var seen = new HashSet<IntPtr>();
+            foreach (var c in Physics.OverlapSphere(at, radius, ~0, QueryTriggerInteraction.Collide))
+            {
+                var d = DoorOf(c);
+                if (d == null || !seen.Add(d.Pointer)) continue;
+                bool ok = false;
+                if (Mirror.NetworkServer.active) { try { d.RPC_ExplodeDoor(at); ok = true; } catch (Exception e) { Game.Log.LogDebug("[Drone] door rpc: " + e.Message); } }
+                if (!ok) { try { d.CMD_ExplodeDoor(at); ok = true; } catch (Exception e) { Game.Log.LogDebug("[Drone] door cmd: " + e.Message); } }
+                if (!ok) { try { d.ExplodeDoor(at); ok = true; } catch (Exception e) { Game.Log.LogDebug("[Drone] door local: " + e.Message); } }
+                if (ok) n++;
+            }
+        }
+        catch (Exception e) { Game.Log.LogDebug("[Drone] doors: " + e.Message); }
+        return n;
+    }
+
+    // A sound you always hear in full (the camera jumps back to your operator the moment the drone is gone).
+    static void Play2D(AudioClip clip, float vol)
+    {
+        if (clip == null) return;
+        var go = new GameObject("GRV_Drone2D"); go.hideFlags = HideFlags.HideAndDontSave;
+        var a = go.AddComponent<AudioSource>(); a.spatialBlend = 0f; a.volume = vol; a.clip = clip; a.Play();
+        UnityEngine.Object.Destroy(go, clip.length + 0.2f);
+    }
+
     static void Explode()
     {
         if (_exploded) return;
@@ -633,20 +770,27 @@ internal static class Drone
             else Game.Log.LogWarning("[Drone] M67 prefab not found");
         }
         catch (Exception e) { Game.Log.LogWarning("[Drone] explosion: " + e.Message); }
+        int panes = BreakGlass(_pos, 6f, 1000f);
+        if (panes > 0) Game.Log.LogInfo("[Drone] blast broke " + panes + " window(s)");
         // Warhead: kills AI enemies within 3 m, wounds to 5 m. Never you, never teammates (the drone knows who it belongs to).
+        // The blast has to reach them: walls stop it, glass doesn't, and a door only lets it through to someone right behind it (≤ 1.2 m).
         int killed = 0;
         try
         {
             int me = 0; try { me = PlayerMaster.MyPlayerMaster.UniqueID; } catch { }
             foreach (var h in Marks.LiveEnemies())
             {
-                float dd = Vector3.Distance(h.transform.position + Vector3.up, _pos);
+                var chest = h.transform.position + Vector3.up;
+                float dd = Vector3.Distance(chest, _pos);
                 if (dd > 5f) continue;
+                if (!BlastReaches(_pos, chest, h)) continue;
                 float dmg = dd <= 3f ? 1000f : Mathf.Lerp(300f, 60f, (dd - 3f) / 2f);
                 try { h.TakeDamage(dmg, default, default, me, _pos); if (dd <= 3f) killed++; } catch { }
             }
         }
         catch (Exception e) { Game.Log.LogDebug("[Drone] blast: " + e.Message); }
+        int doors = BlowDoors(_pos, 3f);
+        if (doors > 0) Game.Log.LogInfo("[Drone] blast blew " + doors + " door(s)");
         Game.Log.LogInfo("[Drone] attack drone detonated (" + (done ? "game M67 explosion" : "no explosion prefab") + "), " + killed + " enemy kill(s) in the blast");
         End("detonated");
         Notice("Impact");
@@ -670,6 +814,13 @@ internal static class Drone
     // ---------- AI: enemies hear the drone, and those who can see it open fire on it ----------
     static float _nextHear; static BrainAI[] _brains; static float _nextBrains;
     static readonly Dictionary<IntPtr, float> _seenSince = new();
+    static readonly List<BrainAI> _firing = new();
+    static readonly Dictionary<IntPtr, float> _aimed = new(); static Vector3 _prevVel; static float _flipEndAt = -9f;
+    static void StopAiFire()
+    {
+        foreach (var b in _firing) { try { if (b != null && b.weapons != null) b.weapons.SERVER_SetFireBool(false); } catch { } }
+        _firing.Clear();
+    }
 
     static bool Sees(BrainAI b)
     {
@@ -693,11 +844,12 @@ internal static class Drone
                 float dist = Vector3.Distance(b.transform.position, _pos);
                 if (dist > 45f) { _seenSince.Remove(b.Pointer); continue; }
                 if (dist < hearRange) { try { b.HeardTarget(_pos, dist, _root != null ? _root.transform : null); } catch { } }
-                if (!Sees(b)) { _seenSince.Remove(b.Pointer); continue; }
+                if (!Sees(b)) { _aimed.Remove(b.Pointer); if (_seenSince.Remove(b.Pointer)) { try { if (b.weapons != null) b.weapons.SERVER_SetFireBool(false); } catch { } } continue; }
                 if (!_seenSince.ContainsKey(b.Pointer)) _seenSince[b.Pointer] = Time.unscaledTime;
                 float seen = Time.unscaledTime - _seenSince[b.Pointer];
                 try { b.LookAtTarget(_pos, false, false, false); } catch { }                        // eyes on it right away
-                if (seen < 0.4f) continue;                                                     // a short beat, then they fire
+                if (seen < 0.8f) continue;                                                     // a beat to bring the gun up, then they fire
+                try { if (b.weapons != null) { b.weapons.SERVER_SetFireBool(true); _firing.Add(b); } } catch { }   // pull the trigger: real shots, real sound
                 try
                 {
                     // real fire: point their suppression at the drone (their bullets can hit it); don't interrupt a fight with a player
@@ -709,9 +861,19 @@ internal static class Drone
                     }
                 }
                 catch (Exception e) { Game.Log.LogDebug("[Drone] suppress: " + e.Message); }
-                // after a while under fire a round finds it even if the spread misses
-                if (seen > 1.6f && UnityEngine.Random.value < 0.3f) { Game.Log.LogInfo("[Drone] shot down by AI fire"); if (_kind == Kind.Attack) Explode(); else { _vel *= 0.5f; Lose("crashed"); } return; }
+                // Their aim builds up only while they can track it. Hovering or flying straight at them = easy.
+                // Fast sideways passes, zigzags (sudden turns) and flips make them lose it. Good aim still gets there.
+                var toDrone = _pos - b.transform.position; float r = Mathf.Max(toDrone.magnitude, 1f);
+                float across = Vector3.Cross(_vel, toDrone / r).magnitude / r;                      // how fast it sweeps across their sight (rad/s)
+                float jink = Vector3.Distance(_vel, _prevVel) / 0.8f;                               // sudden change of direction (m/s²)
+                float track = 1f / (1f + (across / 0.5f) * (across / 0.5f));
+                track /= 1f + jink / 6f;
+                if (_flipT < 1f || Time.unscaledTime - _flipEndAt < 0.4f) track *= 0.15f;
+                float aim = (_aimed.TryGetValue(b.Pointer, out var a0) ? a0 : 0f) + 0.8f * track;
+                _aimed[b.Pointer] = aim;
+                if (aim > ShootDown.Value && UnityEngine.Random.value < 0.15f + 0.4f * track) { Game.Log.LogInfo("[Drone] shot down by AI fire"); if (_kind == Kind.Attack) Explode(); else { _vel *= 0.5f; Lose("crashed"); } return; }
             }
+            _prevVel = _vel;
         }
         catch (Exception e) { Game.Log.LogDebug("[Drone] hear: " + e.Message); }
     }
@@ -966,7 +1128,7 @@ internal static class Drone
         GUI.color = col;
         var t = TimeSpan.FromSeconds(Time.unscaledTime - _startAt);
         GUI.Label(new Rect(cx - 90f, by + 22f, 260f, 20f), t.ToString(@"mm\:ss") + "    " + Mathf.RoundToInt(Vector3.Distance(_pos, _home)) + " m from you");
-        GUI.Label(new Rect(16f, H - 28f, 700f, 20f), (_kind == Kind.Attack ? "ATTACK   mouse 3 detonate   " : "RECON   hold crosshair 1 s to mark   ") + "W/S fwd/back   A/D left/right   scroll up/down   mouse look   V view   Backspace recall");
+        GUI.Label(new Rect(16f, H - 28f, 700f, 20f), (_kind == Kind.Attack ? "ATTACK   " + DetonateKey.Value + " detonate   " : "RECON   hold crosshair 1 s to mark   ") + "W/S fwd/back   A/D left/right   scroll up/down   mouse look   V view   " + (FlipMode.Value == 0 ? "triple-tap W/S/A/D flip" : FlipKey.Value + " + W/S/A/D flip") + "   Backspace recall");
         // Recon mark progress
         if (_kind == Kind.Recon && _markTarget != null)
         {
