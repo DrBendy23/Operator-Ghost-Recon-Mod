@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Build: dotnet build -c Release -p:GameDir="<your OPERATOR folder>"  (needs BepInEx 6 IL2CPP installed there, run the game once first) -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>DroneOperator</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\OPERATOR</GameDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(GameDir)/BepInEx/core/BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/core/BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/core/Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/core/Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/core/0Harmony.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/Il2Cppmscorlib.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/Il2CppSystem.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/Mirror.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.InputLegacyModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.AnimationModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.UIModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/interop/UnityEngine.AudioModule.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/plugins/OperatorModControls.dll" Private="false" />
+  </ItemGroup>
+</Project>

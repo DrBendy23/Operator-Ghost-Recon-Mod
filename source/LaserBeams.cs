@@ -57,8 +57,8 @@ internal static class LaserBeams
     {
         On = cfg.Bind("Laser", "ShowBeam", true, "Show the laser beam.");
         Thickness = cfg.Bind("Laser", "LineThickness", 225f, new ConfigDescription("Laser thickness, percent.", new AcceptableValueRange<float>(100f, 270f)));
-        Strength = cfg.Bind("Laser", "LineStrength", 100f, new ConfigDescription("Laser strength, percent. Above 100 adds a little self-brightness.", new AcceptableValueRange<float>(30f, 150f)));
-        Paleness = cfg.Bind("Laser", "LinePaleness", 60f, new ConfigDescription("How pale the laser color is, percent.", new AcceptableValueRange<float>(20f, 70f)));
+        Strength = cfg.Bind("Laser", "LineStrength", 115f, new ConfigDescription("Laser strength, percent. Above 100 adds a little self-brightness.", new AcceptableValueRange<float>(30f, 150f)));
+        Paleness = cfg.Bind("Laser", "LinePaleness", 65f, new ConfigDescription("How pale the laser color is, percent.", new AcceptableValueRange<float>(20f, 70f)));
         Shimmer = cfg.Bind("Laser", "LineShimmer", 25f, new ConfigDescription("How much the laser shimmers when you move, percent.", new AcceptableValueRange<float>(10f, 40f)));
         Grain = cfg.Bind("Laser", "LineGrain", 105f, new ConfigDescription("How grainy the laser is (dust and cuts), percent.", new AcceptableValueRange<float>(50f, 250f)));
         DotSize = cfg.Bind("Laser", "DotSize", 130f, new ConfigDescription("Laser dot size, percent.", new AcceptableValueRange<float>(100f, 200f)));

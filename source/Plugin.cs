@@ -12,7 +12,7 @@ using UnityEngine.Events;
 
 namespace GhostReconView;
 
-[BepInPlugin(Guid, "Ghost Recon View", "1.1.0")]
+[BepInPlugin(Guid, "Ghost Recon View", "1.2")]
 [BepInDependency("community.operator.thirdperson", BepInDependency.DependencyFlags.HardDependency)]
 [BepInDependency("local.operator.modcontrols", BepInDependency.DependencyFlags.SoftDependency)]
 public class Plugin : BasePlugin
@@ -21,8 +21,8 @@ public class Plugin : BasePlugin
 
     internal static ManualLogSource Out;
     internal static ConfigEntry<KeyCode> SwitchKey;
+    internal static ConfigEntry<int> CrosshairColor;
     internal static ConfigEntry<bool> RequireShift;
-    internal static ConfigEntry<KeyCode> CrosshairKey;
     internal static ConfigEntry<bool> Enabled;
 
     static FieldInfo fThirdPerson, fAds, fTp, fTpCamera, fView;
@@ -33,11 +33,11 @@ public class Plugin : BasePlugin
 
     public override void Load()
     {
-        Out = Log;
+        Out = Log; Game.Log = Log;
         SwitchKey = Config.Bind("Keys", "SwitchKey", KeyCode.V, "First-person aim switch key.");
         RequireShift = Config.Bind("Keys", "RequireShift", true, "Switch needs Shift held.");
-        CrosshairKey = Config.Bind("Keys", "CrosshairKey", KeyCode.Backslash, "Crosshair on/off key.");
         Enabled = Config.Bind("State", "FirstPersonAim", false, "First-person aim on/off.");
+        CrosshairColor = Config.Bind("Crosshair", "Color", 0, new ConfigDescription("0 white, 1 green, 2 red, 3 yellow, 4 blue.", new AcceptableValueRange<int>(0, 4)));
 
         var game = AccessTools.TypeByName("OperatorTPS.Game");
         if (game == null || AccessTools.Method(game, "ToggleThirdPerson") == null) { Out.LogError("BASS Third Person mod not found."); return; }
@@ -50,9 +50,12 @@ public class Plugin : BasePlugin
         mToggle = AccessTools.Method(game, "ToggleThirdPerson");
         mReset = cam != null ? AccessTools.Method(cam, "Reset") : null;
 
-        new Harmony(Guid).Patch(mToggle, prefix: new HarmonyMethod(typeof(Plugin), nameof(TogglePrefix)));
+        var harmony = new Harmony(Guid);
+        harmony.Patch(mToggle, prefix: new HarmonyMethod(typeof(Plugin), nameof(TogglePrefix)));
         try { LaserBeams.Init(Config); } catch (Exception e) { Out.LogWarning(e.Message); }
-        try { MenuBridge.Register(); } catch { }
+        try { AutoLean.Init(Config); AutoLean.InitPatches(harmony); } catch (Exception e) { Out.LogWarning("[Lean] " + e.Message); }
+        try { SmartReload.Init(Config, harmony); } catch (Exception e) { Out.LogWarning("[Reload] " + e.Message); }
+        try { MenuBridge.Register(); MenuBridge.PatchMenu(harmony); } catch { }
 
         ClassInjector.RegisterTypeInIl2Cpp<AimBehaviour>();
         AddComponent<AimBehaviour>();
@@ -123,11 +126,6 @@ public class AimBehaviour : MonoBehaviour
         bool locked = Cursor.lockState == CursorLockMode.Locked;
         try
         {
-            if (locked && Input.GetKeyDown(Plugin.CrosshairKey.Value))
-            {
-                var ch = Plugin.BassSetting("CrosshairOn");
-                if (ch != null) ch.Value = !ch.Value;
-            }
         }
         catch (Exception e) { Plugin.Out.LogDebug(e.Message); }
         if (MenuBridge.Dirty && locked)
@@ -136,6 +134,8 @@ public class AimBehaviour : MonoBehaviour
             try { MenuBridge.Register(); } catch { }
         }
         try { Tick(locked); } catch (Exception e) { Plugin.Out.LogDebug(e.Message); }
+        try { SmartReload.Tick(); } catch (Exception e) { Plugin.Out.LogDebug(e.Message); }
+        try { AutoLean.Tick(); } catch (Exception e) { Plugin.Out.LogDebug("[Lean] " + e.Message); }
     }
 
     void StartEnter() { _phase = Phase.Entering; _t = 0f; }
