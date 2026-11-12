@@ -42,6 +42,9 @@ Not sure how? Drop this README into Claude or ChatGPT and say "Install this mod 
 - Other players see your tablet pose, your lean and the explosion (when you host). They don't see the drone itself yet
 - The drone's AI targets are the game's bots. Real players are never targeted
 
+## AI usage
+Built with the help of Claude (Anthropic): it wrote most of the code from my ideas, I designed, tested and tuned everything in game.
+
 ## Build from source
 ```
 dotnet build source/GhostReconView.csproj -c Release -p:GameDir="<your OPERATOR folder>"
