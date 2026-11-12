@@ -27,8 +27,8 @@ Standalone. Works with or without Ghost Recon View.
 - Chase view and FPV view (V). Night vision works in the drone view (N)
 - W/S A/D move, scroll wheel for height, mouse to look, Backspace to land
 - Tricks: triple-tap A/D to roll, W front flip, S back flip, or switch Flip mode to hold a direction + Flip key (needs ~1 m of air under it)
-- Real-ish physics: it banks, coasts and brakes. ~70 km/h recon, ~85 km/h attack. Hit a wall above ~15 km/h and it breaks into pieces that stay on the ground
-- Enemies hear it, open fire and shoot it down. Zigzags, fast passes and flips throw their aim off (shoot-down time is a setting)
+- Real-ish physics: it banks, coasts and brakes. ~120 km/h recon, ~150 km/h attack. Hit a wall above ~15 km/h and it breaks into pieces that stay on the ground
+- Enemies only notice it up close and in front of them, then open fire. Zigzags, fast passes and flips throw their aim off. See range, reaction and accuracy are settings
 - Battery ~2 min (setting), FPV motor sound, HUD with compass, battery and signal
 
 ![FPV](screenshots/07-fpv-view.jpg)
