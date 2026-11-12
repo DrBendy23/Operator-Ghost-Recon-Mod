@@ -20,8 +20,9 @@ Standalone. Works with or without Ghost Recon View.
 
 ![Attack drone](screenshots/04-attack-drone.jpg)
 
-- **Recon drone** `[` — 5-inch quad. Hold the crosshair on an enemy for a second to mark him. Land it within 3 m of you to get it back
+- **Recon drone** `[` — 5-inch quad. Hold the crosshair on an enemy for a second to mark him
 - **Attack drone** `]` — 7-inch FPV with a warhead. Detonate key (default mouse 4) or hitting someone = boom. Breaks windows and blows doors open; the blast stops at walls. One per mission
+- Recall it within 3 m of you and it goes straight back in your kit. Further away it drops where it is: from 3.5 m or lower it lands in one piece and you walk over and press F to pick it up; higher, it breaks
 - Your operator holds the game's tablet while you fly (everyone sees that)
 - Chase view and FPV view (V). Night vision works in the drone view (N)
 - W/S A/D move, scroll wheel for height, mouse to look, Backspace to land

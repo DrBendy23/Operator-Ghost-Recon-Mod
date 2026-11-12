@@ -13,7 +13,7 @@ namespace GhostReconView;
 // While you fly: your operator holds the game's own tablet (everyone sees that), gets no input, and the camera is the drone's.
 internal static class Drone
 {
-    internal static ConfigEntry<KeyCode> ReconKey, AttackKey, DetonateKey, FlipKey;
+    internal static ConfigEntry<KeyCode> ReconKey, AttackKey, DetonateKey, FlipKey, PickupKey;
     internal static ConfigEntry<float> BatteryMin, Response, ShootDown;
     internal static ConfigEntry<int> FlipMode;
 
@@ -36,6 +36,7 @@ internal static class Drone
     {
         ReconKey = cfg.Bind("Drone", "ReconKeyV4", KeyCode.LeftBracket, "Deploy / recall the recon drone.");
         AttackKey = cfg.Bind("Drone", "AttackKeyV4", KeyCode.RightBracket, "Deploy the attack drone.");
+        PickupKey = cfg.Bind("Drone", "PickupKey", KeyCode.F, "Pick up a drone lying on the ground next to you.");
         FlipMode = cfg.Bind("Drone", "FlipMode", 0, new ConfigDescription("0 = triple-tap W/A/S/D to flip that way. 1 = hold W/A/S/D and press the Flip key.", new AcceptableValueRange<int>(0, 1)));
         FlipKey = cfg.Bind("Drone", "FlipKey", KeyCode.F, "Do a trick: hold W (front flip), S (back flip), A or D (roll) and press this. Triple-tapping a direction works too.");
         DetonateKey = cfg.Bind("Drone", "DetonateKey", KeyCode.Mouse3, "Detonate the attack drone while flying it.");
@@ -210,6 +211,7 @@ internal static class Drone
             if (!_bindsValid && Time.frameCount % 60 == 0) ScanBinds();
             try { var sc0 = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name; if (sc0 != _scene) { _scene = sc0; _reconUsedUp = false; _attackUsedUp = false; ClearDebris(); } } catch { }
             if (Cursor.lockState != CursorLockMode.Locked) return;
+            CheckPickup();
             if (Input.anyKeyDown && (Input.GetKeyDown(ReconKey.Value) || Input.GetKeyDown(AttackKey.Value))) Game.Log.LogInfo("[Drone] deploy key pressed");
             if (Input.GetKeyDown(ReconKey.Value)) Deploy(Kind.Recon);
             else if (Input.GetKeyDown(AttackKey.Value)) Deploy(Kind.Attack);
@@ -239,8 +241,8 @@ internal static class Drone
         var pn = Pn(); if (pn == null) return;
         bool lobby = _scene.IndexOf("Operation Room", StringComparison.OrdinalIgnoreCase) >= 0 || _scene.IndexOf("Lobby", StringComparison.OrdinalIgnoreCase) >= 0 || _scene.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
         if (lobby) { _reconUsedUp = false; _attackUsedUp = false; }   // unlimited drones in the lobby
-        if (k == Kind.Recon && _reconUsedUp) { Notice("Recon drone lost"); return; }
-        if (k == Kind.Attack && _attackUsedUp) { Notice("Attack drone used"); return; }
+        if (k == Kind.Recon && _reconUsedUp) { Notice(HasParked(k) ? "Recon drone is on the ground. Go pick it up" : "Recon drone lost"); return; }
+        if (k == Kind.Attack && _attackUsedUp) { Notice(HasParked(k) ? "Attack drone is on the ground. Go pick it up" : "Attack drone used"); return; }
         var cc = Game.CamOf(pn);
         Vector3 fwd = Vector3.forward; try { fwd = cc != null ? Vector3.ProjectOnPlane(cc.GetAimingDirection(), Vector3.up).normalized : pn.transform.forward; } catch { }
         _kind = k; _exploded = false; _fpv = false;
@@ -429,8 +431,8 @@ internal static class Drone
         _battery -= dt / (BatteryMin.Value * 60f) * (0.85f + Mathf.Abs(climbIn) * 0.25f + Mathf.Abs(_pitch) / 40f * 0.2f);
         float dist = Vector3.Distance(_pos, _home);
         _signal = Mathf.Clamp01(1f - Mathf.Pow(dist / RangeMeters, 1.6f));
-        if (_battery <= 0f) { if (_kind == Kind.Attack) { Explode(); return; } Lose("battery dead"); return; }
-        if (_signal <= 0.02f) { if (_kind == Kind.Attack) { Explode(); return; } Lose("signal lost"); return; }
+        if (_battery <= 0f) { if (_kind == Kind.Attack) { Explode(); return; } Drop("battery dead"); return; }
+        if (_signal <= 0.02f) { if (_kind == Kind.Attack) { Explode(); return; } Drop("signal lost"); return; }
 
         // Operator works the tablet joystick for everyone to see
         if (Time.unscaledTime - _lastSync > 0.15f)
@@ -493,32 +495,73 @@ internal static class Drone
         catch (Exception e) { Game.Log.LogDebug("[Drone] atak hide: " + e.Message); }
     }
 
-    // Landing: the recon drone is only recovered if you bring it back within 3 m of you. Anywhere else it's left behind.
+    // Landing: within 3 m of you the drone goes straight back in your kit. Anywhere else it drops where it is:
+    // from 3.5 m or lower it lands in one piece and you can walk over and pick it up; higher than that it breaks.
+    const float SafeDrop = 3.5f, PickupRange = 1.8f;
     static void Recall()
     {
-        if (_kind == Kind.Recon)
-        {
-            float d = 99f; try { var pn = Pn(); if (pn != null) d = Vector3.Distance(Vector3.ProjectOnPlane(_pos - pn.transform.position, Vector3.up), Vector3.zero) + Mathf.Max(0f, Mathf.Abs(_pos.y - pn.transform.position.y) - 2f); } catch { }
-            if (d > 3f)
-            {
-                _reconUsedUp = true;
-                try   // it stays where you left it: drops to the ground, motors off
-                {
-                    var left = _root; _root = null;
-                    if (_audio != null) { _audio.Stop(); _audio = null; }
-                    if (_hitBox != null) { UnityEngine.Object.Destroy(_hitBox); _hitBox = null; }
-                    var bc = left.AddComponent<BoxCollider>(); bc.size = new Vector3(0.3f, 0.06f, 0.3f) * _scale;
-                    var rb = left.AddComponent<Rigidbody>(); rb.mass = 0.4f; rb.velocity = _vel * 0.3f;
-                    _debris.Add(left);
-                }
-                catch { }
-                Notice("Recon drone left behind (" + d.ToString("0") + " m away)"); End("left behind"); return;
-            }
-            Notice("Recon drone recovered");
-        }
-        else Notice("Attack drone recalled");
-        End("recalled");
+        float d = 99f; try { var pn = Pn(); if (pn != null) d = Vector3.Distance(Vector3.ProjectOnPlane(_pos - pn.transform.position, Vector3.up), Vector3.zero) + Mathf.Max(0f, Mathf.Abs(_pos.y - pn.transform.position.y) - 2f); } catch { }
+        if (d <= 3f) { Notice((_kind == Kind.Recon ? "Recon" : "Attack") + " drone recovered"); End("recalled"); return; }
+        Drop("left " + d.ToString("0") + " m away");
     }
+
+    static void Drop(string why)
+    {
+        float h = HeightAboveGround();
+        if (h > SafeDrop) { _vel = Vector3.down * 6f; Lose("crashed"); return; }               // too high: it smashes when it lands
+        if (_kind == Kind.Recon) _reconUsedUp = true; else _attackUsedUp = true;
+        try
+        {
+            var left = _root; _root = null;
+            if (_audio != null) { _audio.Stop(); _audio = null; }
+            if (_hitBox != null) { UnityEngine.Object.Destroy(_hitBox); _hitBox = null; }
+            var bc = left.AddComponent<BoxCollider>(); bc.size = new Vector3(0.3f, 0.06f, 0.3f) * _scale;
+            var rb = left.AddComponent<Rigidbody>(); rb.mass = 0.4f; rb.velocity = _vel * 0.3f;
+            _parked.Add((left, _kind));
+        }
+        catch { }
+        Notice((_kind == Kind.Recon ? "Recon" : "Attack") + " drone on the ground (" + why + "). Walk to it and press " + PickupKey.Value);
+        End(why);
+    }
+
+    static float HeightAboveGround()
+    {
+        try
+        {
+            if (_hitBox != null) _hitBox.enabled = false;
+            if (Physics.Raycast(_pos, Vector3.down, out var g, 50f, ~0, QueryTriggerInteraction.Ignore)) return g.distance;
+            return 50f;
+        }
+        catch { return 0f; }
+        finally { if (_hitBox != null) _hitBox.enabled = true; }
+    }
+
+    // Drones lying on the ground: walk up to one and press the pick-up key to put it back in your kit.
+    static readonly List<(GameObject go, Kind kind)> _parked = new();
+    static int _nearParked = -1;
+    static void CheckPickup()
+    {
+        _nearParked = -1;
+        if (_parked.Count == 0) return;
+        Vector3 me; try { var pn = Pn(); if (pn == null) return; me = pn.transform.position + Vector3.up * 0.5f; } catch { return; }
+        float best = PickupRange;
+        for (int i = _parked.Count - 1; i >= 0; i--)
+        {
+            var go = _parked[i].go;
+            if (go == null) { _parked.RemoveAt(i); continue; }
+            float dd = Vector3.Distance(go.transform.position, me);
+            if (dd < best) { best = dd; _nearParked = i; }
+        }
+        if (_nearParked < 0 || !Input.GetKeyDown(PickupKey.Value)) return;
+        var (pgo, kind) = _parked[_nearParked];
+        try { UnityEngine.Object.Destroy(pgo); } catch { }
+        _parked.RemoveAt(_nearParked); _nearParked = -1;
+        if (kind == Kind.Recon) _reconUsedUp = false; else _attackUsedUp = false;
+        Notice((kind == Kind.Recon ? "Recon" : "Attack") + " drone picked up");
+    }
+    static bool HasParked(Kind k) { foreach (var p in _parked) if (p.kind == k && p.go != null) return true; return false; }
+    static void ClearParked() { foreach (var p in _parked) { try { if (p.go != null) UnityEngine.Object.Destroy(p.go); } catch { } } _parked.Clear(); _nearParked = -1; }
+
     static void Lose(string why)
     {
         if (_kind == Kind.Recon) _reconUsedUp = true; else _attackUsedUp = true;
@@ -531,7 +574,7 @@ internal static class Drone
     static AudioClip _crashClip;
     static readonly List<GameObject> _debris = new();
 
-    static void ClearDebris() { foreach (var g in _debris) { try { if (g != null) UnityEngine.Object.Destroy(g); } catch { } } _debris.Clear(); }
+    static void ClearDebris() { ClearParked(); foreach (var g in _debris) { try { if (g != null) UnityEngine.Object.Destroy(g); } catch { } } _debris.Clear(); }
 
     // The drone's own parts come off: every arm, motor, prop, plate, battery and the camera become loose physical pieces.
     static void Crash()
@@ -1090,6 +1133,11 @@ internal static class Drone
         if (Event.current == null || Event.current.type != EventType.Repaint) return;
         if (_px == null) { _px = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave }; _px.SetPixel(0, 0, Color.white); _px.Apply(); }
         float W = Screen.width, H = Screen.height;
+        if (!_flying && _nearParked >= 0)
+        {
+            GUI.color = Color.white; GUI.contentColor = Color.white;
+            GUI.Label(new Rect(W / 2f - 110f, H * 0.62f, 260f, 26f), PickupKey.Value + "   Pick up drone");
+        }
         if (Time.unscaledTime < _noticeUntil)
         {
             GUI.color = Color.white; GUI.contentColor = Color.white;
