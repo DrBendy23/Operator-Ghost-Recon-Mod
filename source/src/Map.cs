@@ -128,7 +128,7 @@ internal static class Map
                 _layers.Remove(old);
             }
             l = new Layer();
-            l.Tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Repeat };
+            l.Tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
             l.Tex.SetPixels32(l.Px); l.Tex.Apply(false);
             _layers[band] = l;
         }

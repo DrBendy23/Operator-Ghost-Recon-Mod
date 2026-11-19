@@ -234,6 +234,13 @@ internal static class Font5
                 Plugin.Out.LogInfo("[Font] the game font could not draw (" + e.Message + "), simple letters used instead");
             }
         }
+        Pixel(x, y, text, scale);
+    }
+
+    internal static float PixelWidth(string text, float scale) => text.Length * (W + 1) * scale;
+
+    internal static void Pixel(float x, float y, string text, float scale)
+    {
         if (!_built) Build();
         float adv = (W + 1) * scale, gw = W * scale, gh = H * scale;
         for (int i = 0; i < text.Length; i++, x += adv)
