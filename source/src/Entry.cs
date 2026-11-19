@@ -28,7 +28,7 @@ internal static class Plugin
 
 public class Entry : MelonMod
 {
-    public const string Version = "3.1.0";
+    public const string Version = "3.1.1";
     static UnityAction _beforeRender;
     static MelonPreferences_Entry<bool> _adsToFp;
     static bool _adsLooked;

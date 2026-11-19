@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.1.1
+- Mac: the shoot house planner's text now shows, so you can save your house.
+- Map is sharp again.
+
 ## 3.1.0
 - New: map card, bottom left. A live scan of everything around you (walls, fences, indoors and outdoors), centered on you and following you, with real doors marked in amber and your teammates. Enemies your recon drone marks show as red dots. Replaces the JTAC radar while on.
 - New: CQB playbook (double-click Mouse 4, or any key you pick, double-click or one press): every stack, room entry and movement play animated, with door options. See-through, so the game stays visible. One click or Esc closes it.
