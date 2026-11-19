@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework><AssemblyName>GhostReconView.Mod</AssemblyName>
+    <RootNamespace>GhostReconView</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <DebugType>none</DebugType>
+    <ML>../ml/MelonLoader</ML>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(ML)/net6/MelonLoader.dll" Private="false" />
+    <Reference Include="$(ML)/net6/0Harmony.dll" Private="false" />
+    <Reference Include="$(ML)/net6/Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(ML)/net6/Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2Cppmscorlib.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2CppSystem.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2CppSystem.Core.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Assembly-CSharp-firstpass.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2CppAstarPathfindingProject.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2CppPackageTools.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2CppDrawing.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Il2CppMirror.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.InputLegacyModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.AnimationModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.UIModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.ScreenCaptureModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.AudioModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Unity.RenderPipelines.HighDefinition.Runtime.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/UnityEngine.UI.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Unity.InputSystem.dll" Private="false" />
+    <Reference Include="$(ML)/Il2CppAssemblies/Unity.Mathematics.dll" Private="false" />
+  </ItemGroup>
+</Project>
